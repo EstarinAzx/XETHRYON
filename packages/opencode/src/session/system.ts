@@ -21,7 +21,7 @@ import { getGitContextPrompt } from "@/xethryon/git"
 
 export namespace SystemPrompt {
   export function provider(model: Provider.Model) {
-    if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
+    if (model.api.id.includes("gpt-4") || model.api.id.includes("gpt-5") || model.api.id.includes("o1") || model.api.id.includes("o3"))
       return [PROMPT_BEAST]
     if (model.api.id.includes("gpt")) {
       if (model.api.id.includes("codex")) {
