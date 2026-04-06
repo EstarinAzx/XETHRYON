@@ -21,6 +21,7 @@ import { TaskUpdateTool } from "./task_update"
 import { SwitchAgentTool } from "./switch_agent"
 import { TaskListTool } from "./task_list"
 import { TaskStopTool } from "./task_stop"
+import { TeamAwaitTool } from "./team_await"
 import type { Agent } from "../agent/agent"
 import { Tool } from "./tool"
 import { Config } from "../config/config"
@@ -151,6 +152,7 @@ export namespace ToolRegistry {
           TaskUpdateTool,
           TaskListTool,
           TaskStopTool,
+          TeamAwaitTool,
           SwitchAgentTool,
           ApplyPatchTool,
           ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [LspTool] : []),
@@ -190,7 +192,7 @@ export namespace ToolRegistry {
           }
 
           // Swarm tools are exclusive to COORDINATE mode
-          const swarmTools = ["team_create", "team_delete", "send_message", "task_create", "task_get", "task_update", "task_list", "task_stop"]
+          const swarmTools = ["team_create", "team_delete", "send_message", "task_create", "task_get", "task_update", "task_list", "task_stop", "team_await"]
           if (swarmTools.includes(tool.id) && agent?.name !== "coordinator") {
             return false
           }
