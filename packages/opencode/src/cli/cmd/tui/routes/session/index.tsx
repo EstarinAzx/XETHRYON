@@ -1660,7 +1660,7 @@ function GenericTool(props: ToolProps<any>) {
     <Show
       when={props.output && ctx.showGenericToolOutput()}
       fallback={
-        <InlineTool icon="⚙" pending="Writing command..." complete={true} part={props.part}>
+        <InlineTool icon="▣" pending="Writing command..." complete={true} part={props.part}>
           {props.tool} {input(props.input)}
         </InlineTool>
       }
@@ -2222,7 +2222,7 @@ function TodoWrite(props: ToolProps<typeof TodoWriteTool>) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="⚙" pending="Updating todos..." complete={false} part={props.part}>
+        <InlineTool icon="▣" pending="Updating todos..." complete={false} part={props.part}>
           Updating todos...
         </InlineTool>
       </Match>
