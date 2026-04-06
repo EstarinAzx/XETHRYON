@@ -1577,7 +1577,22 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 // Inject current mode identity so the model knows what it actually is
                 const modeNames: Record<string, string> = { build: "CONSTRUCT", plan: "ARCHITECT", coordinator: "COORDINATE", explore: "EXPLORE", verification: "VALIDATE" }
                 const currentMode = modeNames[agent.name] ?? agent.name.toUpperCase()
-                const modeIdentity = `<current_mode>${currentMode}</current_mode>\nYou are currently operating in ${currentMode} mode. If a previous switch_agent call in the conversation history shows a different mode, ignore it — THIS is your actual active mode.`
+                const coordinateGuidance = currentMode === "COORDINATE" ? [
+                  "",
+                  "## COORDINATE Mode — Delegation Strategies",
+                  "You have TWO delegation strategies available. Choose the right one:",
+                  "",
+                  "### 1. Xethryon Swarm (team_create → task_create → send_message)",
+                  "Use for: Complex multi-agent coordination, named teams with roles, parallel workers, tasks with dependencies.",
+                  "Example: 'Build frontend and backend simultaneously with separate agents'",
+                  "",
+                  "### 2. Native Sub-Tasks (built-in task/sub-agent tool)",
+                  "Use for: Simple delegation, sequential steps, one-off parallel tasks without cross-agent communication.",
+                  "Example: 'Create a folder, then a file, then write content'",
+                  "",
+                  "Rule of thumb: If you need 1-3 independent steps → native sub-tasks. If you need named agents working in parallel with communication → Xethryon Swarm.",
+                ].join("\n") : ""
+                const modeIdentity = `<current_mode>${currentMode}</current_mode>\nYou are currently operating in ${currentMode} mode. If a previous switch_agent call in the conversation history shows a different mode, ignore it — THIS is your actual active mode.${coordinateGuidance}`
 
                 const system = [
                   ...env,
