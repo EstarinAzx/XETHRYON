@@ -66,6 +66,7 @@ import stripAnsi from "strip-ansi"
 import { usePromptRef } from "../../context/prompt"
 import { useExit } from "../../context/exit"
 import { Filesystem } from "@/util/filesystem"
+import { MessageID, PartID } from "@/session/schema"
 import { Global } from "@/global"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
@@ -187,6 +188,7 @@ export function Session() {
   })
 
   let lastSwitch: string | undefined = undefined
+  let pendingAutoSwitch = false
   sdk.event.on("message.part.updated", (evt) => {
     const part = evt.properties.part
     if (part.type !== "tool") return
@@ -204,10 +206,45 @@ export function Session() {
       try {
         const result = JSON.parse(part.state.output ?? "{}")
         if (result.agent) {
+          // Detect plan → non-plan switch for auto-continue
+          if (result.planModeLifted) {
+            pendingAutoSwitch = true
+          }
           local.agent.set(result.agent)
           lastSwitch = part.id
         }
       } catch {}
+    }
+  })
+
+  // Auto-continue after plan→build switch: when the turn ends and we have a
+  // pending switch, automatically send "continue" so the model can execute
+  // in the new mode without the user having to type anything.
+  createEffect(() => {
+    const status = sync.data.session_status?.[route.sessionID]
+    if (status?.type === "idle" && pendingAutoSwitch) {
+      pendingAutoSwitch = false
+      const selectedModel = local.model.current()
+      if (!selectedModel || !route.sessionID) return
+      // Small delay to let the UI settle
+      setTimeout(() => {
+        sdk.client.session
+          .prompt({
+            sessionID: route.sessionID,
+            ...selectedModel,
+            messageID: MessageID.ascending(),
+            agent: local.agent.current().name,
+            model: selectedModel,
+            parts: [
+              {
+                id: PartID.ascending(),
+                type: "text",
+                text: "continue",
+              },
+            ],
+          })
+          .catch(() => {})
+      }, 300)
     }
   })
 
