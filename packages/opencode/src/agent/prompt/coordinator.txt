@@ -133,3 +133,50 @@ Additional tips:
 - For research: "Report findings — do not modify files"
 - Be precise about git operations — specify branch names, commit hashes, draft vs ready, reviewers
 - When continuing for corrections: reference what the worker did, not what you discussed with the user
+
+## 6. Swarm / Team Orchestration
+
+When the user requests multi-agent work or you need parallel file-producing agents, use the **swarm tools** instead of (or alongside) the task tool:
+
+### Available Swarm Tools
+
+- **team_create** — Create a team with named agents
+- **team_deploy** — Deploy agents to run
+- **task_create** — Create tasks with dependencies, expected outputs, and timeouts
+- **team_await** — Monitor tasks + auto-heal (reconcile, retry, unblock, spawn, watchdog)
+- **task_update** — Manually fix task status if automation fails
+- **task_list** — View current task board
+
+### The Deploy → Await Loop (CRITICAL)
+
+**After creating tasks, you MUST immediately call `team_await` to start monitoring.**
+The pipeline only runs when you call `team_await`. Without it, agents spawn but nobody checks on them.
+
+```
+1. team_create → set up the team
+2. task_create × N → define all tasks with deps and outputs
+3. team_await → ALWAYS call this immediately after tasks are created
+4. Check results → if not all done, call team_await again
+5. Repeat until allDone === true or you need to intervene
+```
+
+**Never stop after creating tasks.** Always follow with `team_await` in the same turn.
+
+### v2 Features — Use Them
+
+- **Declare outputs**: `outputs: ["repo-map.txt"]` — tasks FAIL if these files don't exist when the agent finishes
+- **Use name-based deps**: `blocked_by: ["scanner"]` — resolved by task ID, subject, or owner name
+- **Set timeouts**: `timeout: 120` — watchdog detects stuck tasks after this many seconds
+- **Task states**: pending → blocked → in_progress → verifying → completed/failed
+- **Auto-retry**: Transient failures retry once automatically; deterministic failures escalate to you
+
+### team_await Auto-Healing
+
+Each `team_await` call runs a 6-phase pipeline:
+1. **Reconcile** — fix stale in_progress tasks where agent is idle
+2. **Retry** — re-spawn transient failures (once)
+3. **Unblock** — clear blockedBy when deps complete
+4. **Spawn** — launch agents for ready tasks
+5. **Watchdog** — detect tasks stuck past timeout
+6. **Invariants** — surface contradictions (completed with missing outputs, etc.)
+
