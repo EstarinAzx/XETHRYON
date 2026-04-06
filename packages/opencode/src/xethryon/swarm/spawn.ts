@@ -183,6 +183,21 @@ async function runTeammateSession(
       updateTeammateStatus(agentId, "idle")
       await setMemberActive(config.teamName, config.name, false)
 
+      // Auto-mark owned tasks as completed on the task board
+      // (teammates can't call task_update since swarm tools are COORDINATE-only)
+      try {
+        const { listTasks, updateTask } = await import("./tasks-board.js")
+        const allTasks = await listTasks(config.teamName)
+        const ownedTasks = allTasks.filter(
+          (t) => t.owner === config.name && (t.status === "pending" || t.status === "in_progress"),
+        )
+        for (const task of ownedTasks) {
+          await updateTask(config.teamName, task.id, { status: "completed" })
+        }
+      } catch {
+        // task board may not exist — non-fatal
+      }
+
       // Notify team lead that this teammate finished
       const resultText = result.parts.findLast((x: { type: string }) => x.type === "text") as { text?: string } | undefined
       await writeToMailbox(
