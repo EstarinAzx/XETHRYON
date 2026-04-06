@@ -32,6 +32,7 @@ export const TeamAwaitTool = Tool.define("team_await", {
   parameters,
   async execute(params) {
     const swarm = await import("../xethryon/swarm/index.js")
+    const { updateTask } = await import("../xethryon/swarm/tasks-board.js")
 
     // Verify team exists
     const team = await swarm.readTeamFileAsync(params.team_name)
@@ -60,14 +61,60 @@ export const TeamAwaitTool = Tool.define("team_await", {
       }
     }
 
-    // Auto-spawn: check for pending tasks whose deps are met and agents aren't running
-    // Re-read tasks fresh to catch any completions that landed during the coffee break
+    // ─── Phase 1: Auto-reconcile stale in_progress tasks ───────────────
+    // If agent is idle/stopped but task is still in_progress, the completion
+    // handler may have failed. Check and fix.
+    for (const task of tasks) {
+      if (task.status !== "in_progress" || !task.owner) continue
+
+      const teamFile = await swarm.readTeamFileAsync(params.team_name)
+      const member = teamFile?.members.find((m) => m.name === task.owner)
+      if (!member) continue
+
+      const isRunning = swarm.isTeammateRunning(member.agentId)
+      if (!isRunning) {
+        // Agent finished but task is still in_progress — auto-complete it
+        // The agent session must have ended (either successfully or not)
+        await updateTask(params.team_name, task.id, { status: "completed" })
+      }
+    }
+
+    // Re-read after reconciliation
+    tasks = await swarm.listTasks(params.team_name)
+
+    // ─── Phase 2: Auto-unblock pending tasks whose deps are now met ────
+    const unblocked: string[] = []
+    for (const task of tasks) {
+      if (task.status !== "pending" || task.blockedBy.length === 0) continue
+
+      const allDepsCompleted = task.blockedBy.every((depId) => {
+        const dep = tasks.find((t) => t.id === depId)
+        return dep?.status === "completed"
+      })
+
+      if (allDepsCompleted) {
+        // Clear the blockedBy list — task is unblocked
+        await updateTask(params.team_name, task.id, {
+          blockedBy: [] as any, // Reset — deps are met
+          status: task.owner ? "in_progress" : "pending",
+        })
+        unblocked.push(`${task.subject} (deps cleared)`)
+      }
+    }
+
+    // Re-read after unblock
+    if (unblocked.length > 0) {
+      tasks = await swarm.listTasks(params.team_name)
+    }
+
+    // ─── Phase 3: Auto-spawn pending tasks whose deps are met ──────────
     tasks = await swarm.listTasks(params.team_name)
     const spawned: string[] = []
     for (const task of tasks) {
-      if (task.status !== "pending" || !task.owner) continue
+      if (task.status !== "pending" && task.status !== "in_progress") continue
+      if (!task.owner) continue
 
-      // Check deps — re-read from current tasks list (freshly loaded)
+      // Skip if deps aren't met (for tasks that still have blockers)
       if (task.blockedBy.length > 0) {
         const allDepsCompleted = task.blockedBy.every((depId) => {
           const dep = tasks.find((t) => t.id === depId)
@@ -76,12 +123,11 @@ export const TeamAwaitTool = Tool.define("team_await", {
         if (!allDepsCompleted) continue
       }
 
-      // Deps met (or none) — is the agent already running?
+      // Is the agent already running?
       const teamFile = await swarm.readTeamFileAsync(params.team_name)
       const member = teamFile?.members.find((m) => m.name === task.owner)
       if (member && !swarm.isTeammateRunning(member.agentId)) {
         // Spawn the teammate for this task
-        const { updateTask } = await import("../xethryon/swarm/tasks-board.js")
         await updateTask(params.team_name, task.id, { status: "in_progress" })
         await swarm.spawnTeammate({
           name: member.name,
@@ -101,7 +147,7 @@ export const TeamAwaitTool = Tool.define("team_await", {
       tasks = await swarm.listTasks(params.team_name)
     }
 
-    // Build status report
+    // ─── Build status report ───────────────────────────────────────────
     const statusIcon: Record<string, string> = {
       pending: "○",
       in_progress: "◉",
@@ -151,6 +197,10 @@ export const TeamAwaitTool = Tool.define("team_await", {
       ? `\n\nAuto-spawned this cycle:\n${spawned.map((s) => `  ▸ ${s}`).join("\n")}`
       : ""
 
+    const unblockedSection = unblocked.length > 0
+      ? `\n\nAuto-unblocked this cycle:\n${unblocked.map((u) => `  ▸ ${u}`).join("\n")}`
+      : ""
+
     const output = [
       header,
       "",
@@ -160,6 +210,7 @@ export const TeamAwaitTool = Tool.define("team_await", {
       `Tasks:`,
       ...taskLines,
       reports,
+      unblockedSection,
       spawnedSection,
     ].join("\n")
 

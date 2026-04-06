@@ -112,11 +112,16 @@ export async function updateTask(
     }
 
     // Handle additive block lists
+    // Empty array = explicit clear (for auto-unblock); non-empty = additive merge
     if (updates.blocks) {
-      task.blocks = [...new Set([...task.blocks, ...updates.blocks])]
+      task.blocks = updates.blocks.length === 0
+        ? []
+        : [...new Set([...task.blocks, ...updates.blocks])]
     }
-    if (updates.blockedBy) {
-      task.blockedBy = [...new Set([...task.blockedBy, ...updates.blockedBy])]
+    if (updates.blockedBy !== undefined) {
+      task.blockedBy = updates.blockedBy.length === 0
+        ? []
+        : [...new Set([...task.blockedBy, ...updates.blockedBy])]
     }
 
     await writeTasksFile(teamName, tasks)
