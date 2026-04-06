@@ -88,13 +88,24 @@ export const SwitchAgentTool = Tool.define("switch_agent", {
 
     const displayName = cyberNames[args.agent] ?? args.agent.toUpperCase()
 
+    // Determine if we're leaving plan mode → need to tell the model restrictions are lifted
+    const currentAgent = ctx.agent
+    const leavingPlan = currentAgent === "plan" && args.agent !== "plan"
+
+    const switchInfo: Record<string, unknown> = {
+      type: "agent_switch",
+      agent: args.agent,
+      displayName,
+      reason: args.reason ?? "Task requires different capabilities",
+    }
+
+    if (leavingPlan) {
+      switchInfo.planModeLifted = true
+      switchInfo.instructions = "IMPORTANT: The previous plan mode read-only restrictions are NOW LIFTED. You have full write access in your new mode. However, the switch takes effect on the NEXT turn. Do NOT attempt to write/edit files in this same response — instead, tell the user you've switched and will execute immediately when they send their next message (even just 'go' or 'continue')."
+    }
+
     return {
-      output: JSON.stringify({
-        type: "agent_switch",
-        agent: args.agent,
-        displayName,
-        reason: args.reason ?? "Task requires different capabilities",
-      }),
+      output: JSON.stringify(switchInfo),
       title: `⚡ Switching to ${displayName}`,
       metadata: {
         agent: args.agent,
