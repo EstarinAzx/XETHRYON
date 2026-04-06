@@ -59,11 +59,19 @@ planning done, time to implement         → switches back to CONSTRUCT
 This can chain: a single prompt can result in planning, implementation, verification, and shipping without manual steps in between.
 
 ### Swarm Orchestration
-Parallel workflows via isolated sub-sessions with file-based IPC and shared task boards.
+Parallel and sequential multi-agent workflows via isolated sub-sessions with file-based IPC and shared task boards.
 
-Tools: `team_create`, `team_delete`, `send_message`, `task_create`, `task_get`, `task_update`, `task_list`, `task_stop`.
+**Coffee-break pattern** — the coordinator deploys agents, takes short "coffee breaks" via `team_await`, then checks progress and decides whether to retry, nudge, or finalize. No manual intervention needed.
+
+**Dependency chains** — tasks can declare `blockedBy` dependencies. Blocked tasks stay `pending` until their prerequisites complete, then auto-spawn.
+
+**Live Dashboard** (`/swarm`) — real-time mission control overlay showing team name, agent statuses, task progress with dependency info, and a progress bar. Polls the filesystem every second.
+
+Tools: `team_create`, `team_delete`, `send_message`, `task_create`, `task_get`, `task_update`, `task_list`, `task_stop`, `team_await`.
 
 ![Swarm orchestration — 3 agents coordinating a sequential file pipeline](assets/agent_swarm_sample.png)
+
+![Live Swarm Dashboard showing agents, tasks, dependencies, and progress](assets/swarm-dashboard.png)
 
 ![Spawned sub-sessions in the session list](assets/agent_swarm_session_list_sample.png)
 
@@ -179,6 +187,7 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 | `/loop` | Recurring prompt scheduler |
 | `/onboard` | Guided project onboarding |
 | `/autopilot` | Continuous autonomous execution |
+| `/swarm` | Live swarm dashboard overlay |
 
 ---
 
@@ -203,6 +212,9 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 │         Autonomy Checklist (invoke_skill)      │
 │                    ↓                          │
 │         Memory Post-Turn Hook (extract/store)  │
+│                    ↓                          │
+│     Swarm Orchestration (team_await loop)       │
+│         ↕ filesystem IPC + task board           │
 └───────────────────────────────────────────────┘
 ```
 
@@ -216,6 +228,7 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 | Memory Persistence + AutoDream | Claude Code (ported) |
 | Bundled Skills System | Claude Code (ported) |
 | Swarm Orchestration | Claude Code (ported) |
+| Live Swarm Dashboard | Original |
 | Cross-Session Memory Retrieval | Original |
 | Self-Reflection Loop | Original |
 | Git-Aware Context | Original |
