@@ -6,6 +6,33 @@
  * Output: { data: Record<string, string>, content: string }
  */
 
+// --- Memory reliability types ---
+
+export const CONFIDENCE_LEVELS = ['high', 'medium', 'low'] as const
+export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number]
+
+/**
+ * Default expiry durations per memory type (in days).
+ * - project: 30 days (deadlines, initiatives are short-lived)
+ * - feedback: 90 days (preferences evolve)
+ * - user: 180 days (identity changes slowly)
+ * - reference: never expires (external pointers stay valid)
+ */
+export const DEFAULT_EXPIRY_DAYS: Record<string, number | null> = {
+  project: 30,
+  feedback: 90,
+  user: 180,
+  reference: null,
+}
+
+/**
+ * Parse a confidence level string. Returns undefined for invalid values.
+ */
+export function parseConfidence(raw: unknown): ConfidenceLevel | undefined {
+  if (typeof raw !== 'string') return undefined
+  return CONFIDENCE_LEVELS.find(c => c === raw.toLowerCase())
+}
+
 export interface FrontmatterResult {
   data: Record<string, string>
   content: string
@@ -39,4 +66,17 @@ export function parseFrontmatter(raw: string): FrontmatterResult {
   }
 
   return { data, content }
+}
+
+/**
+ * Calculate the expiry date for a memory based on its type and creation date.
+ * Returns null if the memory type never expires.
+ */
+export function calculateExpiry(memoryType: string | undefined, createdDate: Date): string | null {
+  if (!memoryType) return null
+  const days = DEFAULT_EXPIRY_DAYS[memoryType]
+  if (days === null || days === undefined) return null
+  const expiry = new Date(createdDate)
+  expiry.setDate(expiry.getDate() + days)
+  return expiry.toISOString().slice(0, 10) // YYYY-MM-DD
 }

@@ -256,7 +256,7 @@ export const TRUSTING_RECALL_SECTION: readonly string[] = [
 ]
 
 /**
- * Frontmatter format example with the `type` field.
+ * Frontmatter format example with reliability fields.
  */
 export const MEMORY_FRONTMATTER_EXAMPLE: readonly string[] = [
   '```markdown',
@@ -264,8 +264,20 @@ export const MEMORY_FRONTMATTER_EXAMPLE: readonly string[] = [
   'name: {{memory name}}',
   'description: {{one-line description — used to decide relevance in future conversations, so be specific}}',
   `type: {{${MEMORY_TYPES.join(', ')}}}`,
+  'confidence: {{high, medium, or low}}',
+  'created: {{YYYY-MM-DD}}',
   '---',
   '',
   '{{memory content — for feedback/project types, structure as: rule/fact, then **Why:** and **How to apply:** lines}}',
   '```',
+  '',
+  '### Confidence levels',
+  '- **high** — User explicitly stated a rule, preference, or fact. Direct quotes, clear instructions.',
+  '- **medium** — Inferred from user behavior or indirect confirmation. The user didn\'t say it outright but the pattern is clear.',
+  '- **low** — Speculative or uncertain. You noticed something but aren\'t confident it\'s a stable preference.',
+  '',
+  '### Expiry',
+  '- `expires` is auto-calculated if omitted: project=30d, feedback=90d, user=180d, reference=never.',
+  '- You can set an explicit `expires: YYYY-MM-DD` to override the default.',
+  '- Expired memories are automatically excluded from future recall.',
 ]

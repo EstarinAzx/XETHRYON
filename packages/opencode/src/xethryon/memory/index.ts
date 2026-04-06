@@ -9,6 +9,20 @@ export { type MemoryType, parseMemoryType } from "./memoryTypes.js"
 export { memoryAgeDays, memoryFreshnessText } from "./memoryAge.js"
 export { parseFrontmatter, type FrontmatterResult } from "./frontmatter.js"
 
+// --- Reliability layer ---
+export {
+  type ConfidenceLevel,
+  CONFIDENCE_LEVELS,
+  DEFAULT_EXPIRY_DAYS,
+  parseConfidence,
+  calculateExpiry,
+} from "./frontmatter.js"
+export {
+  detectContradictions,
+  formatConflictWarnings,
+  type ConflictResult,
+} from "./contradictions.js"
+
 // --- Path resolution ---
 export {
   isAutoMemoryEnabled,
