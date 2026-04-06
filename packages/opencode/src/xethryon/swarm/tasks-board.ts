@@ -1,10 +1,12 @@
 /**
  * Shared task board for swarm teams.
  * Ported from cc-leak/src/utils/tasks.ts.
+ * v2: artifact-based verification + expanded states.
  * Stored at .opencode/swarm/{team}/tasks/tasks.json.
  */
 
 import fs from "fs/promises"
+import fsSync from "fs"
 import crypto from "crypto"
 import { getTasksFilePath, getTasksDir } from "./paths.js"
 import { acquireLock } from "./lock.js"
@@ -102,11 +104,12 @@ export async function updateTask(
         "in-progress": "in_progress",
         running: "in_progress",
         active: "in_progress",
-        blocked: "pending",
-        waiting: "pending",
+        waiting: "blocked",
         removed: "deleted",
         cancelled: "deleted",
         canceled: "deleted",
+        errored: "failed",
+        error: "failed",
       }
       task.status = (statusMap[task.status] ?? task.status) as Task["status"]
     }
@@ -177,4 +180,36 @@ export async function blockTask(
  */
 export async function resetTaskList(teamName: string): Promise<void> {
   await writeTasksFile(teamName, [])
+}
+
+/**
+ * Verify a task's outputs exist and success criteria are met.
+ * Returns { passed, failures } — caller decides what status to set.
+ */
+export function verifyTask(task: Task): { passed: boolean; failures: string[] } {
+  const failures: string[] = []
+
+  // Check declared outputs exist
+  if (task.outputs && task.outputs.length > 0) {
+    for (const outputPath of task.outputs) {
+      if (!fsSync.existsSync(outputPath)) {
+        failures.push(`missing output: ${outputPath}`)
+      }
+    }
+  }
+
+  // Check success criteria
+  if (task.successCriteria && task.successCriteria.length > 0) {
+    for (const criterion of task.successCriteria) {
+      if (criterion.startsWith("file_exists:")) {
+        const filePath = criterion.slice("file_exists:".length)
+        if (!fsSync.existsSync(filePath)) {
+          failures.push(`criterion failed: ${criterion}`)
+        }
+      }
+      // Extensible — add more criteria types here
+    }
+  }
+
+  return { passed: failures.length === 0, failures }
 }

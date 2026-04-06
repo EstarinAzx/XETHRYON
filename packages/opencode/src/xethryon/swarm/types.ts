@@ -94,7 +94,27 @@ export type TypedMessage =
 // Task board
 // ---------------------------------------------------------------------------
 
-export type TaskStatus = "pending" | "in_progress" | "completed" | "deleted"
+export type TaskStatus =
+  | "pending"     // Not started, no blockers (or blockers not yet evaluated)
+  | "blocked"     // Explicitly blocked — waiting on deps
+  | "in_progress" // Agent is running
+  | "verifying"   // Agent finished, outputs being checked
+  | "completed"   // Verified — outputs exist, criteria met
+  | "failed"      // Verification failed or agent errored
+  | "deleted"     // Removed
+
+/** Failure classification for retry logic */
+export type FailureKind = "transient" | "deterministic"
+
+/** Structured result from an agent's execution */
+export interface TaskResult {
+  status: "success" | "failure"
+  wrote: string[]       // Files created/modified
+  read: string[]        // Files read
+  notes: string[]       // Agent's observations
+  failureKind?: FailureKind
+  error?: string
+}
 
 export interface Task {
   id: string
@@ -104,6 +124,16 @@ export interface Task {
   owner?: string
   blocks: string[]
   blockedBy: string[]
+
+  // v2: Artifact-based completion
+  outputs?: string[]             // Expected output file paths (absolute)
+  successCriteria?: string[]     // Validation rules, e.g. "file_exists:/path/to/file"
+  result?: TaskResult            // Structured agent output
+
+  // v2: Watchdog
+  timeout?: number               // Per-task timeout in seconds (default: 60)
+  retryCount?: number            // How many times this task has been retried
+
   metadata?: Record<string, unknown>
   createdAt: number
   updatedAt: number

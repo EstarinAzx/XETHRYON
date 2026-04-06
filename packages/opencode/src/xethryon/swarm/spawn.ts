@@ -183,30 +183,39 @@ async function runTeammateSession(
       updateTeammateStatus(agentId, "idle")
       await setMemberActive(config.teamName, config.name, false)
 
-      // Auto-mark owned tasks as completed on the task board
-      // (teammates can't call task_update since swarm tools are COORDINATE-only)
-      // Include result summary so coordinator can verify work was done.
+      // ─── v2: Post-task verification pipeline ─────────────────────────
+      // 1. Extract structured result from agent output
+      // 2. Transition to verifying → run artifact checks → completed or failed
       try {
-        const { listTasks, updateTask } = await import("./tasks-board.js")
-        // Fresh read — catch any completions that landed during execution
+        const { listTasks, updateTask, verifyTask } = await import("./tasks-board.js")
         const allTasks = await listTasks(config.teamName)
         const ownedTasks = allTasks.filter(
-          (t) => t.owner === config.name && (t.status === "pending" || t.status === "in_progress"),
+          (t) => t.owner === config.name && ["pending", "blocked", "in_progress"].includes(t.status),
         )
 
-        // Check if the agent actually produced tool output (wrote/edited files)
+        // Extract structured result from tool parts
         const toolParts = result.parts.filter((p: { type: string }) => p.type === "tool") as {
           type: string
           tool?: string
-          state?: { status?: string }
+          state?: { status?: string; output?: string }
         }[]
         const writeTools = ["write", "edit", "bash", "apply_patch", "multi_edit", "patch"]
-        const didWriteFiles = toolParts.some(
-          (p) => writeTools.includes(p.tool ?? "") && p.state?.status === "completed",
-        )
+        const wroteFiles = toolParts
+          .filter((p) => writeTools.includes(p.tool ?? "") && p.state?.status === "completed")
+          .map((p) => p.tool ?? "unknown")
+        const readFiles = toolParts
+          .filter((p) => (p.tool === "read" || p.tool === "glob" || p.tool === "grep") && p.state?.status === "completed")
+          .map((p) => p.tool ?? "unknown")
+
+        const taskResult = {
+          status: wroteFiles.length > 0 ? "success" as const : "failure" as const,
+          wrote: wroteFiles,
+          read: readFiles,
+          notes: [] as string[],
+        }
 
         for (const task of ownedTasks) {
-          // Check if all blockedBy dependencies are completed (use fresh snapshot)
+          // Check if all blockedBy dependencies are completed
           if (task.blockedBy.length > 0) {
             const freshTasks = await listTasks(config.teamName)
             const allDepsCompleted = task.blockedBy.every((depId) => {
@@ -214,24 +223,54 @@ async function runTeammateSession(
               return dep?.status === "completed"
             })
             if (!allDepsCompleted) {
-              // Dependencies not met — agent finished without doing work.
-              // Reset to pending so team_await keeps polling.
-              await updateTask(config.teamName, task.id, { status: "pending" })
+              // Deps not met → blocked (not pending)
+              await updateTask(config.teamName, task.id, {
+                status: "blocked",
+                result: { ...taskResult, status: "failure", notes: ["blocked: dependencies not completed"] },
+              })
               continue
             }
           }
 
-          // If agent didn't write any files, DON'T auto-complete — reset to pending
-          // so the coordinator can inspect and retry. This prevents false positives.
-          if (!didWriteFiles) {
+          // Transition to verifying
+          await updateTask(config.teamName, task.id, { status: "verifying", result: taskResult })
+
+          // Run artifact verification
+          const verification = verifyTask(task)
+
+          if (!verification.passed) {
+            // Missing outputs = hard fail (deterministic)
             await updateTask(config.teamName, task.id, {
-              status: "pending",
-              description: `${task.description ?? ""}\n\n⚠ [auto-reset — agent finished without file writes, needs coordinator review]`.trim(),
+              status: "failed",
+              result: {
+                ...taskResult,
+                status: "failure",
+                notes: verification.failures,
+                failureKind: "deterministic",
+              },
             })
             continue
           }
 
-          await updateTask(config.teamName, task.id, { status: "completed" })
+          // If agent didn't write any files and no outputs declared → failed (transient)
+          if (wroteFiles.length === 0 && (!task.outputs || task.outputs.length === 0)) {
+            await updateTask(config.teamName, task.id, {
+              status: "failed",
+              result: {
+                ...taskResult,
+                status: "failure",
+                notes: ["agent finished without writing files"],
+                failureKind: "transient",
+              },
+            })
+            continue
+          }
+
+          // All checks passed → completed
+          await updateTask(config.teamName, task.id, {
+            status: "completed",
+            result: { ...taskResult, status: "success" },
+          })
         }
       } catch {
         // task board may not exist — non-fatal

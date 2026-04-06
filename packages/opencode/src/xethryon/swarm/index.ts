@@ -13,6 +13,8 @@ export type {
   TypedMessage,
   Task,
   TaskStatus,
+  TaskResult,
+  FailureKind,
   TeammateSpawnConfig,
   SpawnResult,
   ActiveTeammate,
@@ -87,6 +89,7 @@ export {
   listTasks,
   blockTask,
   resetTaskList,
+  verifyTask,
 } from "./tasks-board.js"
 
 // State
