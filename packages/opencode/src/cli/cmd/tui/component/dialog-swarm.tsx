@@ -163,8 +163,17 @@ export function DialogSwarm() {
     }
   }
 
-  const completedCount = () => tasks().filter((t) => t.status === "completed").length
-  const totalCount = () => tasks().length
+  const activeTasks = () => tasks().filter((t) => t.status !== "deleted")
+  const completedCount = () => activeTasks().filter((t) => t.status === "completed").length
+  const totalCount = () => activeTasks().length
+
+  // Resolve blockedBy IDs to task subjects
+  const resolveBlockedBy = (blockedBy: string[]) => {
+    return blockedBy.map((id) => {
+      const dep = tasks().find((t) => t.id === id)
+      return dep ? dep.subject : id
+    })
+  }
 
   return (
     <box paddingLeft={2} paddingRight={2} gap={1} paddingBottom={1}>
@@ -260,7 +269,7 @@ export function DialogSwarm() {
                   </box>
                   <Show when={task.blockedBy.length > 0}>
                     <text fg={theme.warning} paddingLeft={3}>
-                      └─ blocked by: {task.blockedBy.join(", ")}
+                      └─ blocked by: {resolveBlockedBy(task.blockedBy).join(", ")}
                     </text>
                   </Show>
                 </box>
