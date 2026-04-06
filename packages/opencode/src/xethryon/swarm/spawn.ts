@@ -192,6 +192,19 @@ async function runTeammateSession(
           (t) => t.owner === config.name && (t.status === "pending" || t.status === "in_progress"),
         )
         for (const task of ownedTasks) {
+          // Check if all blockedBy dependencies are completed
+          if (task.blockedBy.length > 0) {
+            const allDepsCompleted = task.blockedBy.every((depId) => {
+              const dep = allTasks.find((t) => t.id === depId)
+              return dep?.status === "completed"
+            })
+            if (!allDepsCompleted) {
+              // Dependencies not met — agent finished without doing work.
+              // Reset to pending so team_await keeps polling.
+              await updateTask(config.teamName, task.id, { status: "pending" })
+              continue
+            }
+          }
           await updateTask(config.teamName, task.id, { status: "completed" })
         }
       } catch {

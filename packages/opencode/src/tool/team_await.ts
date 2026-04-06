@@ -58,6 +58,9 @@ export const TeamAwaitTool = Tool.define("team_await", {
       }
     }
 
+    // Track which tasks we've already re-spawned to avoid duplicates
+    const respawned = new Set<string>()
+
     // Poll loop
     let timedOut = false
     while (true) {
@@ -67,6 +70,40 @@ export const TeamAwaitTool = Tool.define("team_await", {
       if (activeTasks.length === 0) {
         // All done
         break
+      }
+
+      // Check for pending tasks whose dependencies are now met — re-spawn those teammates
+      for (const task of activeTasks) {
+        if (task.status !== "pending" || !task.owner || respawned.has(task.id)) continue
+        if (task.blockedBy.length === 0) continue // no deps, shouldn't be pending unless just created
+
+        const allDepsCompleted = task.blockedBy.every((depId) => {
+          const dep = tasks.find((t) => t.id === depId)
+          return dep?.status === "completed"
+        })
+
+        if (allDepsCompleted) {
+          // Dependencies met — re-spawn this teammate
+          respawned.add(task.id)
+          const teamFile = await swarm.readTeamFileAsync(params.team_name)
+          const member = teamFile?.members.find((m) => m.name === task.owner)
+          if (member && !swarm.isTeammateRunning(member.agentId)) {
+            // Update task to in_progress
+            const { updateTask } = await import("../xethryon/swarm/tasks-board.js")
+            await updateTask(params.team_name, task.id, { status: "in_progress" })
+
+            // Re-spawn with original prompt + task context
+            await swarm.spawnTeammate({
+              name: member.name,
+              teamName: params.team_name,
+              prompt: member.prompt ?? task.description,
+              agentType: member.agentType,
+              model: member.model,
+              description: task.description,
+              color: member.color,
+            })
+          }
+        }
       }
 
       const elapsed = Date.now() - startTime
