@@ -53,6 +53,8 @@ planning done, time to implement         → switches back to CONSTRUCT
 
 This can chain: a single prompt can result in planning, implementation, verification, and shipping without manual steps in between.
 
+![Autonomous skill invocation — agent self-invokes /onboard after detecting the task context](assets/self_invoke.png)
+
 ### Swarm Orchestration
 Parallel and sequential multi-agent workflows via isolated sub-sessions with file-based IPC and shared task boards.
 
@@ -64,15 +66,25 @@ Parallel and sequential multi-agent workflows via isolated sub-sessions with fil
 
 Tools: `team_create`, `team_delete`, `send_message`, `task_create`, `task_get`, `task_update`, `task_list`, `task_stop`, `team_await`.
 
-![Swarm orchestration — 3 agents coordinating a sequential file pipeline](assets/agent_swarm_sample.png)
+**Coordinator deploying tasks** — the COORDINATE agent creates a team, assigns tasks with dependencies, and begins monitoring:
 
-![Live Swarm Dashboard showing agents, tasks, dependencies, and progress](assets/swarm-dashboard.png)
+![Coordinator creating a swarm team with dependent tasks and agent assignments](assets/agent_swarm_sample.png)
 
-![Swarm Dashboard — completed run with dependency chain resolved](assets/swarm-dashboard2.png)
+**Live Dashboard** — real-time `/swarm` overlay showing 3 agents, task progress, and dependency chains at 0%:
 
-![Spawned sub-sessions in the session list](assets/agent_swarm_session_list_sample.png)
+![Live Swarm Dashboard with 3 agents — researcher active, quiz-maker and answer-key idle with blocked dependencies](assets/swarm-dashboard.png)
 
-![Swarm task completed — coordinator reports final results](assets/swarm_task_completed.png)
+**Mission complete** — all agents finished, dashboard at 100% with dependency chain fully resolved:
+
+![Swarm Dashboard showing 2/2 tasks completed, both agents done, progress at 100%](assets/swarm-dashboard2.png)
+
+**Sub-sessions** — each agent runs as an isolated session, visible in the session list:
+
+![Session list showing spawned swarm sub-sessions alongside the coordinator](assets/agent_swarm_session_list_sample.png)
+
+**Final report** — coordinator summarizes all outputs after the swarm completes:
+
+![Coordinator reporting final results — files created, task board status confirmed](assets/swarm_task_completed.png)
 
 ### Agent Modes
 
