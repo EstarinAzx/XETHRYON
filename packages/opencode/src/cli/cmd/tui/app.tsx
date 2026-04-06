@@ -34,6 +34,7 @@ import { DialogThemeList } from "@tui/component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
 import { DialogAgent } from "@tui/component/dialog-agent"
+import { DialogSwarm } from "@tui/component/dialog-swarm"
 import { DialogSessionList } from "@tui/component/dialog-session-list"
 import { DialogWorkspaceList } from "@tui/component/dialog-workspace-list"
 import { KeybindProvider, useKeybind } from "@tui/context/keybind"
@@ -640,6 +641,18 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         dialog.replace(() => <DialogStatus />)
       },
       category: "System",
+    },
+    {
+      title: "Swarm dashboard",
+      value: "swarm.dashboard",
+      category: "Swarm",
+      slash: {
+        name: "swarm",
+        aliases: ["agents", "dashboard"],
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogSwarm />)
+      },
     },
     {
       title: "Switch theme",

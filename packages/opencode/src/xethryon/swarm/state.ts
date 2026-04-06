@@ -1,31 +1,43 @@
 /**
  * Swarm state singleton.
  * Manages the active swarm runtime (teammates, abort controllers).
+ *
+ * Uses process.env for the active team name (survives module duplication
+ * by bundlers) and a globalThis symbol for the teammates map.
+ * This ensures the TUI dialog can read the same state as the server tools.
  */
 
 import type { ActiveTeammate, TeammateStatus } from "./types.js"
 
 // ---------------------------------------------------------------------------
-// Module state
+// Global state (bundler-safe — survives module duplication)
 // ---------------------------------------------------------------------------
 
-const activeTeammates: Map<string, ActiveTeammate> = new Map()
-let activeTeamName: string | null = null
+// Use a unique symbol key on globalThis so the teammates map is shared
+// across any module instances that might get duplicated by the bundler.
+const TEAMMATES_KEY = Symbol.for("xethryon.swarm.activeTeammates")
+
+function getTeammatesMap(): Map<string, ActiveTeammate> {
+  if (!(globalThis as any)[TEAMMATES_KEY]) {
+    ;(globalThis as any)[TEAMMATES_KEY] = new Map<string, ActiveTeammate>()
+  }
+  return (globalThis as any)[TEAMMATES_KEY]
+}
 
 // ---------------------------------------------------------------------------
-// Team state
+// Team state (uses process.env — truly global)
 // ---------------------------------------------------------------------------
 
 export function setActiveTeam(teamName: string): void {
-  activeTeamName = teamName
+  process.env.XETHRYON_ACTIVE_TEAM = teamName
 }
 
 export function getActiveTeam(): string | null {
-  return activeTeamName
+  return process.env.XETHRYON_ACTIVE_TEAM ?? null
 }
 
 export function clearActiveTeam(): void {
-  activeTeamName = null
+  delete process.env.XETHRYON_ACTIVE_TEAM
 }
 
 // ---------------------------------------------------------------------------
@@ -33,27 +45,27 @@ export function clearActiveTeam(): void {
 // ---------------------------------------------------------------------------
 
 export function registerTeammate(teammate: ActiveTeammate): void {
-  activeTeammates.set(teammate.agentId, teammate)
+  getTeammatesMap().set(teammate.agentId, teammate)
 }
 
 export function unregisterTeammate(agentId: string): void {
-  activeTeammates.delete(agentId)
+  getTeammatesMap().delete(agentId)
 }
 
 export function getTeammate(agentId: string): ActiveTeammate | undefined {
-  return activeTeammates.get(agentId)
+  return getTeammatesMap().get(agentId)
 }
 
 export function getAllTeammates(): ActiveTeammate[] {
-  return [...activeTeammates.values()]
+  return [...getTeammatesMap().values()]
 }
 
 export function getTeammatesForTeam(teamName: string): ActiveTeammate[] {
-  return [...activeTeammates.values()].filter((t) => t.teamName === teamName)
+  return [...getTeammatesMap().values()].filter((t) => t.teamName === teamName)
 }
 
 export function updateTeammateStatus(agentId: string, status: TeammateStatus): void {
-  const t = activeTeammates.get(agentId)
+  const t = getTeammatesMap().get(agentId)
   if (t) t.status = status
 }
 
@@ -61,7 +73,7 @@ export function updateTeammateStatus(agentId: string, status: TeammateStatus): v
  * Abort a teammate (signal its abort controller).
  */
 export function abortTeammate(agentId: string): boolean {
-  const t = activeTeammates.get(agentId)
+  const t = getTeammatesMap().get(agentId)
   if (!t) return false
   t.abortController.abort()
   t.status = "stopped"
@@ -73,7 +85,7 @@ export function abortTeammate(agentId: string): boolean {
  */
 export function abortAllTeammates(teamName: string): number {
   let count = 0
-  for (const t of activeTeammates.values()) {
+  for (const t of getTeammatesMap().values()) {
     if (t.teamName === teamName && t.status !== "stopped") {
       t.abortController.abort()
       t.status = "stopped"
@@ -87,11 +99,12 @@ export function abortAllTeammates(teamName: string): number {
  * Cleanup all active teammates (abort and unregister).
  */
 export function cleanupAllTeammates(): void {
-  for (const t of activeTeammates.values()) {
+  const map = getTeammatesMap()
+  for (const t of map.values()) {
     if (t.status !== "stopped") {
       t.abortController.abort()
     }
   }
-  activeTeammates.clear()
-  activeTeamName = null
+  map.clear()
+  delete process.env.XETHRYON_ACTIVE_TEAM
 }

@@ -21,10 +21,11 @@ export const TaskCreateTool = Tool.define("task_create", {
   async execute(params) {
     const swarm = await import("../xethryon/swarm/index.js")
 
+    const hasBlockers = params.blocked_by && params.blocked_by.length > 0
     const task = await swarm.createTask(params.team_name, {
       subject: params.subject,
       description: params.description,
-      status: params.owner ? "in_progress" : "pending",
+      status: hasBlockers ? "pending" : params.owner ? "in_progress" : "pending",
       owner: params.owner,
       blocks: [],
       blockedBy: params.blocked_by ?? [],
