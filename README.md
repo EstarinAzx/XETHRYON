@@ -24,11 +24,6 @@ The agent extracts learnings from every conversation and stores them as durable 
 
 ![Session 2 — agent recalls the kebab-case and response format convention from memory](assets/persisntent_memory_session2.png)
 
-### Self-Reflection
-Before presenting code to the user, the agent reviews its own output: did it address the actual request, are there missing edge cases, does it follow existing patterns. If issues are found, it revises silently — the user only sees the corrected result.
-
-Capped at one reflection pass per turn. Toggle with `XETHRYON_REFLECTION=0`.
-
 ### Git-Aware Context
 The agent sees branch name, uncommitted changes, merge/rebase state, and ahead/behind counts without running explicit commands. This informs decisions about stashing, branching, and conflict handling.
 
@@ -76,6 +71,8 @@ Tools: `team_create`, `team_delete`, `send_message`, `task_create`, `task_get`, 
 ![Swarm Dashboard — completed run with dependency chain resolved](assets/swarm-dashboard2.png)
 
 ![Spawned sub-sessions in the session list](assets/agent_swarm_session_list_sample.png)
+
+![Swarm task completed — coordinator reports final results](assets/swarm_task_completed.png)
 
 ### Agent Modes
 
