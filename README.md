@@ -73,6 +73,8 @@ Tools: `team_create`, `team_delete`, `send_message`, `task_create`, `task_get`, 
 
 ![Live Swarm Dashboard showing agents, tasks, dependencies, and progress](assets/swarm-dashboard.png)
 
+![Swarm Dashboard — completed run with dependency chain resolved](assets/swarm-dashboard2.png)
+
 ![Spawned sub-sessions in the session list](assets/agent_swarm_session_list_sample.png)
 
 ### Agent Modes
