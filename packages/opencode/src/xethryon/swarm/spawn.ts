@@ -188,6 +188,7 @@ async function runTeammateSession(
       // Include result summary so coordinator can verify work was done.
       try {
         const { listTasks, updateTask } = await import("./tasks-board.js")
+        // Fresh read — catch any completions that landed during execution
         const allTasks = await listTasks(config.teamName)
         const ownedTasks = allTasks.filter(
           (t) => t.owner === config.name && (t.status === "pending" || t.status === "in_progress"),
@@ -199,15 +200,17 @@ async function runTeammateSession(
           tool?: string
           state?: { status?: string }
         }[]
+        const writeTools = ["write", "edit", "bash", "apply_patch", "multi_edit", "patch"]
         const didWriteFiles = toolParts.some(
-          (p) => (p.tool === "write" || p.tool === "edit" || p.tool === "bash") && p.state?.status === "completed",
+          (p) => writeTools.includes(p.tool ?? "") && p.state?.status === "completed",
         )
 
         for (const task of ownedTasks) {
-          // Check if all blockedBy dependencies are completed
+          // Check if all blockedBy dependencies are completed (use fresh snapshot)
           if (task.blockedBy.length > 0) {
+            const freshTasks = await listTasks(config.teamName)
             const allDepsCompleted = task.blockedBy.every((depId) => {
-              const dep = allTasks.find((t) => t.id === depId)
+              const dep = freshTasks.find((t) => t.id === depId)
               return dep?.status === "completed"
             })
             if (!allDepsCompleted) {
@@ -218,14 +221,17 @@ async function runTeammateSession(
             }
           }
 
-          // If agent didn't write any files, mark with a warning so coordinator can verify
-          const note = didWriteFiles
-            ? undefined
-            : "[auto-completed — no file writes detected, may need verification]"
-          await updateTask(config.teamName, task.id, {
-            status: "completed",
-            ...(note && { description: `${task.description ?? ""}\n\n⚠ ${note}`.trim() }),
-          })
+          // If agent didn't write any files, DON'T auto-complete — reset to pending
+          // so the coordinator can inspect and retry. This prevents false positives.
+          if (!didWriteFiles) {
+            await updateTask(config.teamName, task.id, {
+              status: "pending",
+              description: `${task.description ?? ""}\n\n⚠ [auto-reset — agent finished without file writes, needs coordinator review]`.trim(),
+            })
+            continue
+          }
+
+          await updateTask(config.teamName, task.id, { status: "completed" })
         }
       } catch {
         // task board may not exist — non-fatal
