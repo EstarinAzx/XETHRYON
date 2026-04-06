@@ -61,11 +61,13 @@ export const TeamAwaitTool = Tool.define("team_await", {
     }
 
     // Auto-spawn: check for pending tasks whose deps are met and agents aren't running
+    // Re-read tasks fresh to catch any completions that landed during the coffee break
+    tasks = await swarm.listTasks(params.team_name)
     const spawned: string[] = []
     for (const task of tasks) {
       if (task.status !== "pending" || !task.owner) continue
 
-      // Check deps
+      // Check deps — re-read from current tasks list (freshly loaded)
       if (task.blockedBy.length > 0) {
         const allDepsCompleted = task.blockedBy.every((depId) => {
           const dep = tasks.find((t) => t.id === depId)
