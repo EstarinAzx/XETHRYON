@@ -219,19 +219,32 @@ export function DialogSwarm() {
             fallback={<text fg={theme.textMuted}>  No agents registered</text>}
           >
             <For each={members()}>
-              {(member) => (
-                <box flexDirection="row" gap={1}>
-                  <text fg={member.isActive ? theme.success : theme.textMuted} flexShrink={0}>
-                    {member.isActive ? "◉" : "○"}
-                  </text>
-                  <text fg={theme.text} wrapMode="word">
-                    <b>{member.name}</b>{" "}
-                    <span style={{ fg: theme.textMuted }}>
-                      {member.isActive ? "active" : "idle"}
-                    </span>
-                  </text>
-                </box>
-              )}
+              {(member) => {
+                // Derive status from task board — if agent owns an in_progress task, they're active
+                const isWorking = () => tasks().some(
+                  (t) => t.owner === member.name && t.status === "in_progress"
+                )
+                const hasCompleted = () => tasks().some(
+                  (t) => t.owner === member.name && t.status === "completed"
+                )
+                const label = () => isWorking() ? "active" : hasCompleted() ? "done" : "idle"
+                const color = () => isWorking() ? theme.success : hasCompleted() ? theme.primary : theme.textMuted
+                const icon = () => isWorking() ? "◉" : hasCompleted() ? "✓" : "○"
+
+                return (
+                  <box flexDirection="row" gap={1}>
+                    <text fg={color()} flexShrink={0}>
+                      {icon()}
+                    </text>
+                    <text fg={theme.text} wrapMode="word">
+                      <b>{member.name}</b>{" "}
+                      <span style={{ fg: theme.textMuted }}>
+                        {label()}
+                      </span>
+                    </text>
+                  </box>
+                )
+              }}
             </For>
           </Show>
         </box>

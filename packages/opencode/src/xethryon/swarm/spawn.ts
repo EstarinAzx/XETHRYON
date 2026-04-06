@@ -185,12 +185,24 @@ async function runTeammateSession(
 
       // Auto-mark owned tasks as completed on the task board
       // (teammates can't call task_update since swarm tools are COORDINATE-only)
+      // Include result summary so coordinator can verify work was done.
       try {
         const { listTasks, updateTask } = await import("./tasks-board.js")
         const allTasks = await listTasks(config.teamName)
         const ownedTasks = allTasks.filter(
           (t) => t.owner === config.name && (t.status === "pending" || t.status === "in_progress"),
         )
+
+        // Check if the agent actually produced tool output (wrote/edited files)
+        const toolParts = result.parts.filter((p: { type: string }) => p.type === "tool") as {
+          type: string
+          tool?: string
+          state?: { status?: string }
+        }[]
+        const didWriteFiles = toolParts.some(
+          (p) => (p.tool === "write" || p.tool === "edit" || p.tool === "bash") && p.state?.status === "completed",
+        )
+
         for (const task of ownedTasks) {
           // Check if all blockedBy dependencies are completed
           if (task.blockedBy.length > 0) {
@@ -205,7 +217,15 @@ async function runTeammateSession(
               continue
             }
           }
-          await updateTask(config.teamName, task.id, { status: "completed" })
+
+          // If agent didn't write any files, mark with a warning so coordinator can verify
+          const note = didWriteFiles
+            ? undefined
+            : "[auto-completed — no file writes detected, may need verification]"
+          await updateTask(config.teamName, task.id, {
+            status: "completed",
+            ...(note && { description: `${task.description ?? ""}\n\n⚠ ${note}`.trim() }),
+          })
         }
       } catch {
         // task board may not exist — non-fatal
