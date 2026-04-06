@@ -93,6 +93,24 @@ export async function updateTask(
 
     Object.assign(task, updates, { updatedAt: Date.now() })
 
+    // Normalize common status aliases
+    if (task.status) {
+      const statusMap: Record<string, string> = {
+        complete: "completed",
+        done: "completed",
+        finished: "completed",
+        "in-progress": "in_progress",
+        running: "in_progress",
+        active: "in_progress",
+        blocked: "pending",
+        waiting: "pending",
+        removed: "deleted",
+        cancelled: "deleted",
+        canceled: "deleted",
+      }
+      task.status = (statusMap[task.status] ?? task.status) as Task["status"]
+    }
+
     // Handle additive block lists
     if (updates.blocks) {
       task.blocks = [...new Set([...task.blocks, ...updates.blocks])]
