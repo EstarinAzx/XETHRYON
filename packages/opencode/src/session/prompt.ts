@@ -317,6 +317,8 @@ export namespace SessionPrompt {
           text: `<system-reminder>
 Plan mode is active. The user indicated that they do not want you to execute yet -- you MUST NOT make any edits (with the exception of the plan file mentioned below), run any non-readonly tools (including changing configs or making commits), or otherwise make any changes to the system. This supersedes any other instructions you have received.
 
+**EXCEPTION — Autonomy Mode:** If autonomy mode is active, you are ALLOWED to use the \`switch_agent\` tool to switch to a different mode when the task requires capabilities beyond read-only planning. If the user asks you to write code, create files, or execute — switch to CONSTRUCT. If they need a team — switch to COORDINATE. Do NOT refuse or say "I can't do that in plan mode" — just switch and do it.
+
 ## Plan File Info:
 ${exists ? `A plan file already exists at ${plan}. You can read it and make incremental edits using the edit tool.` : `No plan file exists yet. You should create your plan at ${plan} using the write tool.`}
 You should build your plan incrementally by writing to or editing this file. NOTE that this is the only file you are allowed to edit - other than this you are only allowed to take READ-ONLY actions.
