@@ -172,6 +172,7 @@ async function runTeammateSession(
         { permission: "webfetch", pattern: "*", action: "allow" },
         { permission: "websearch", pattern: "*", action: "allow" },
         { permission: "task", pattern: "*", action: "allow" },
+        { permission: "external_directory", pattern: "*", action: "allow" },
       ],
     })
 
@@ -205,6 +206,9 @@ async function runTeammateSession(
       // 2. Transition to verifying → run artifact checks → completed or failed
       try {
         const { listTasks, updateTask, verifyTask } = await import("./tasks-board.js")
+        const { readTeamFileAsync } = await import("./team.js")
+        const teamFile = await readTeamFileAsync(config.teamName)
+        const coordinatorSessionId = teamFile?.leadSessionId
         const allTasks = await listTasks(config.teamName)
         const ownedTasks = allTasks.filter(
           (t) => t.owner === config.name && ["pending", "blocked", "in_progress"].includes(t.status),
@@ -275,6 +279,7 @@ async function runTeammateSession(
               status: "failed",
               wrote: wroteFiles,
               notes: verification.failures,
+              coordinatorSessionId,
               progress: {
                 done: snap.filter((t) => ["completed", "deleted"].includes(t.status)).length,
                 total: snap.filter((t) => t.status !== "deleted").length,
@@ -303,6 +308,7 @@ async function runTeammateSession(
               status: "failed",
               wrote: [],
               notes: ["agent finished without writing files"],
+              coordinatorSessionId,
               progress: {
                 done: snap.filter((t) => ["completed", "deleted"].includes(t.status)).length,
                 total: snap.filter((t) => t.status !== "deleted").length,
@@ -325,6 +331,7 @@ async function runTeammateSession(
             status: "completed",
             wrote: wroteFiles,
             notes: [],
+            coordinatorSessionId,
             progress: {
               done: snap.filter((t) => ["completed", "deleted"].includes(t.status)).length,
               total: snap.filter((t) => t.status !== "deleted").length,

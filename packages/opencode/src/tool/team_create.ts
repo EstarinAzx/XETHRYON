@@ -30,19 +30,24 @@ export const TeamCreateTool = Tool.define("team_create", {
     "Teammates communicate via a file-based mailbox. Check messages with send_message.",
   ].join(" "),
   parameters,
-  async execute(params) {
+  async execute(params, ctx) {
     const swarm = await import("../xethryon/swarm/index.js")
 
     // Generate a unique team name
     const teamName = swarm.generateUniqueTeamName(params.team_name)
     const leadAgentId = swarm.formatAgentId("team-lead", teamName)
 
-    // Create the team file
+    // Store coordinator session ID for event-driven auto-inject
+    swarm.setCoordinatorSessionId(ctx.sessionID)
+
+    // Create the team file — include leadSessionId so spawn.ts can
+    // pass it to event emitters for server-side prompt_async injection.
     await swarm.writeTeamFileAsync(teamName, {
       name: teamName,
       description: params.description,
       createdAt: Date.now(),
       leadAgentId,
+      leadSessionId: ctx.sessionID,
       members: [],
     })
 

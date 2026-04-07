@@ -41,6 +41,22 @@ export function clearActiveTeam(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Coordinator session ID (uses process.env — truly global)
+// ---------------------------------------------------------------------------
+
+export function setCoordinatorSessionId(sessionId: string): void {
+  process.env.XETHRYON_COORDINATOR_SESSION = sessionId
+}
+
+export function getCoordinatorSessionId(): string | null {
+  return process.env.XETHRYON_COORDINATOR_SESSION ?? null
+}
+
+export function clearCoordinatorSessionId(): void {
+  delete process.env.XETHRYON_COORDINATOR_SESSION
+}
+
+// ---------------------------------------------------------------------------
 // Teammate tracking
 // ---------------------------------------------------------------------------
 

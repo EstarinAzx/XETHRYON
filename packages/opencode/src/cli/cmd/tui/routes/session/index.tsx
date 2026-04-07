@@ -7,7 +7,6 @@ import {
   For,
   Match,
   on,
-  onCleanup,
   onMount,
   Show,
   Switch,
@@ -247,102 +246,6 @@ export function Session() {
           .catch(() => {})
       }, 300)
     }
-  })
-
-  // ─── Swarm auto-inject ──────────────────────────────────────────────
-  // When a swarm task completes/fails, buffer events and set a flag.
-  // A reactive createEffect watches for coordinator idle + flag set → inject.
-  // This mirrors the pendingAutoSwitch pattern: the coordinator might be
-  // busy (running team_await) when the event fires, so we wait until idle.
-  let pendingSwarmInject = false
-  let pendingSwarmEvents: Array<{ subject: string; owner: string; status: string; wrote: string[]; done: number; total: number }> = []
-  let swarmDebounce: ReturnType<typeof setTimeout> | null = null
-
-  // Use globalThis directly — same Symbol.for key as events.ts
-  // This avoids import issues in the Vite-bundled TUI.
-  const SWARM_EMITTER_KEY = Symbol.for("xethryon.swarm.eventEmitter")
-  function getSwarmEmitter(): EventTarget {
-    if (!(globalThis as any)[SWARM_EMITTER_KEY]) {
-      ;(globalThis as any)[SWARM_EMITTER_KEY] = new EventTarget()
-    }
-    return (globalThis as any)[SWARM_EMITTER_KEY]
-  }
-
-  const swarmHandler = (e: Event) => {
-    const evt = (e as CustomEvent).detail
-    pendingSwarmEvents.push({
-      subject: evt.taskSubject,
-      owner: evt.owner,
-      status: evt.status,
-      wrote: evt.wrote,
-      done: evt.progress.done,
-      total: evt.progress.total,
-    })
-
-    // Debounce: wait 3s to batch concurrent completions, then set flag
-    if (swarmDebounce) clearTimeout(swarmDebounce)
-    swarmDebounce = setTimeout(() => {
-      swarmDebounce = null
-      // Set the reactive flag — createEffect below will fire when idle
-      pendingSwarmInject = true
-      // Force the createEffect to re-evaluate by reading session_status
-      // (SolidJS tracks the read in createEffect, so we just set the flag
-      // and poke the effect by triggering a read on next idle transition)
-    }, 3000)
-  }
-  getSwarmEmitter().addEventListener("swarm:task-done", swarmHandler)
-
-  // Reactive listener: injects when coordinator goes idle AND swarm events are pending
-  createEffect(() => {
-    const status = sync.data.session_status?.[route.sessionID]
-    if (status?.type === "idle" && pendingSwarmInject && isAutonomyEnabled()) {
-      pendingSwarmInject = false
-
-      const events = [...pendingSwarmEvents]
-      pendingSwarmEvents = []
-      if (events.length === 0) return
-
-      // Don't inject if all tasks are already done
-      const last = events[events.length - 1]
-      if (last.done >= last.total) return
-
-      // Build injection message
-      const lines = events.map((e) => {
-        const emoji = e.status === "completed" ? "✓" : "✗"
-        const files = e.wrote.length > 0 ? ` (wrote: ${e.wrote.join(", ")})` : ""
-        return `${emoji} ${e.subject} (${e.owner}) ${e.status}${files}`
-      })
-      const progress = `Progress: ${last.done}/${last.total} done`
-      const text = `[SWARM UPDATE] ${lines.join(" | ")}. ${progress}. Call team_await to check your team and take action.`
-
-      const selectedModel = local.model.current()
-      if (!selectedModel || !route.sessionID) return
-
-      // Small delay to let the UI settle (same as pendingAutoSwitch)
-      setTimeout(() => {
-        sdk.client.session
-          .prompt({
-            sessionID: route.sessionID,
-            ...selectedModel,
-            messageID: MessageID.ascending(),
-            agent: local.agent.current().name,
-            model: selectedModel,
-            parts: [
-              {
-                id: PartID.ascending(),
-                type: "text",
-                text,
-              },
-            ],
-          })
-          .catch(() => {})
-      }, 500)
-    }
-  })
-
-  onCleanup(() => {
-    getSwarmEmitter().removeEventListener("swarm:task-done", swarmHandler)
-    if (swarmDebounce) clearTimeout(swarmDebounce)
   })
 
   let scroll: ScrollBoxRenderable
