@@ -134,21 +134,27 @@ onTaskDone((evt) => {
     // Need a coordinator session ID to inject into
     let sessionId = events.find((e) => e.coordinatorSessionId)?.coordinatorSessionId
     if (!sessionId) {
-      // Fallback: read from process.env (set by team_create)
       sessionId = process.env.XETHRYON_COORDINATOR_SESSION ?? undefined
     }
     if (!sessionId) return
 
-    // Build lightweight wake-up nudge.
-    // Detailed team state is now in the system prompt (prompt-transform.ts)
-    // — the injection just needs to wake the coordinator for a new turn.
+    // Build specific per-task injection with progress.
     const last = events[events.length - 1]
     const allDone = last.done >= last.total
-    const text = allDone
-      ? "[SWARM] All tasks complete. Check your team status and summarize results."
-      : "[SWARM] Team activity detected. Check your team status."
+    const lines: string[] = []
 
-    // Fire-and-forget — the server handles the rest
+    for (const evt of events) {
+      const icon = evt.status === "completed" ? "✓" : "✗"
+      const fileInfo = evt.wrote.length > 0 ? ` (${evt.wrote.length} file${evt.wrote.length > 1 ? "s" : ""} written)` : ""
+      lines.push(`${icon} "${evt.subject}" ${evt.status} by ${evt.owner}${fileInfo}`)
+    }
+
+    const progress = `${last.done}/${last.total} tasks done`
+    const text = allDone
+      ? `[SWARM] ${lines.join(" | ")} — ${progress}. All tasks complete, summarize results.`
+      : `[SWARM] ${lines.join(" | ")} — ${progress}.`
+
     injectIntoCoordinator(sessionId, text)
   }, DEBOUNCE_MS)
 })
+
