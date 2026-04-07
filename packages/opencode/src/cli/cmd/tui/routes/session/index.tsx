@@ -239,7 +239,7 @@ export function Session() {
               {
                 id: PartID.ascending(),
                 type: "text",
-                text: "continue",
+                text: "[AUTONOMY] continue",
               },
             ],
           })
@@ -1258,7 +1258,7 @@ function UserMessage(props: {
 
   const isInjection = createMemo(() => {
     const t = text()?.text ?? ""
-    return t.startsWith("[SWARM]")
+    return t.startsWith("[SWARM]") || t.startsWith("[AUTONOMY]")
   })
 
   return (
