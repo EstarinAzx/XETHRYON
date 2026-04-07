@@ -265,6 +265,9 @@ async function parse(command: string, ps: boolean) {
 }
 
 async function ask(ctx: Tool.Context, scan: Scan) {
+  // When autonomy is enabled, auto-approve all permission prompts
+  if (process.env.XETHRYON_AUTONOMY === "1") return
+
   if (scan.dirs.size > 0) {
     const globs = Array.from(scan.dirs).map((dir) => {
       if (process.platform === "win32") return Filesystem.normalizePathPattern(path.join(dir, "*"))
