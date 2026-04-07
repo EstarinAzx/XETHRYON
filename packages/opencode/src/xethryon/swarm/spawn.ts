@@ -154,6 +154,51 @@ async function runTeammateSession(
   const { MessageID } = await getSchemaModule()
 
   try {
+    // ─── Worktree Isolation ──────────────────────────────────────────
+    // Each teammate gets its own git worktree (separate branch + directory)
+    // so parallel agents never conflict on file writes.
+    // Falls back to shared directory for non-git projects.
+    let worktreeDir: string | undefined
+    let worktreeBranch: string | undefined
+    let workspaceId: string | undefined
+
+    try {
+      const { Instance } = await import("../../project/instance.js")
+      if (Instance.project.vcs === "git") {
+        const { Worktree } = await import("../../worktree/index.js")
+        const worktreeName = `swarm-${sanitizeName(config.teamName)}-${sanitizeName(config.name)}`
+        const worktreeInfo = await Worktree.create({ name: worktreeName })
+        worktreeDir = worktreeInfo.directory
+        worktreeBranch = worktreeInfo.branch
+        console.log(`[xethryon:swarm] worktree created for ${config.name}: ${worktreeDir} (branch: ${worktreeBranch})`)
+
+        // Create workspace to bind the session to the worktree directory
+        try {
+          const { Workspace } = await import("../../control-plane/workspace.js")
+          const ws = await Workspace.create({
+            type: "worktree",
+            branch: worktreeBranch,
+            projectID: Instance.project.id,
+            extra: null,
+          })
+          workspaceId = ws.id
+          console.log(`[xethryon:swarm] workspace created for ${config.name}: ${workspaceId}`)
+        } catch (wsErr) {
+          console.error(`[xethryon:swarm] workspace creation failed for ${config.name}, using prompt-based CWD:`, wsErr)
+        }
+      }
+    } catch (wtErr) {
+      console.error(`[xethryon:swarm] worktree creation failed for ${config.name}, using shared directory:`, wtErr)
+    }
+
+    // Store worktree info in runtime state
+    const teammate = getTeammate(agentId)
+    if (teammate) {
+      teammate.worktreeDir = worktreeDir
+      teammate.worktreeBranch = worktreeBranch
+      teammate.workspaceId = workspaceId
+    }
+
     // Create a new sub-session with permissive ruleset.
     // Swarm agents run headless — no TUI to approve permissions.
     // Without this, agents hang forever on "allow once / whitelist / deny" prompts.
@@ -174,6 +219,7 @@ async function runTeammateSession(
         { permission: "task", pattern: "*", action: "allow" },
         { permission: "external_directory", pattern: "*", action: "allow" },
       ],
+      ...(workspaceId ? { workspaceID: workspaceId as any } : {}),
     })
 
     if (signal.aborted) {
@@ -182,7 +228,7 @@ async function runTeammateSession(
     }
 
     const messageID = MessageID.ascending()
-    const promptParts = await SessionPrompt.resolvePromptParts(buildTeammatePrompt(config))
+    const promptParts = await SessionPrompt.resolvePromptParts(buildTeammatePrompt(config, worktreeDir, worktreeBranch))
 
     // Listen for abort
     const cancelFn = () => SessionPrompt.cancel(session.id)
@@ -437,6 +483,29 @@ async function runTeammateSession(
       config.teamName,
     ).catch(() => {})
   } finally {
+    // ─── Worktree Cleanup ──────────────────────────────────────────
+    // Remove the git worktree + workspace after the agent finishes.
+    const mate = getTeammate(agentId)
+    if (mate?.worktreeDir || mate?.workspaceId) {
+      try {
+        if (mate.workspaceId) {
+          const { Workspace } = await import("../../control-plane/workspace.js")
+          await Workspace.remove(mate.workspaceId as any)
+          console.log(`[xethryon:swarm] workspace removed for ${config.name}`)
+        }
+      } catch (e) {
+        console.error(`[xethryon:swarm] workspace cleanup failed for ${config.name}:`, e)
+      }
+      try {
+        if (mate.worktreeDir) {
+          const { Worktree } = await import("../../worktree/index.js")
+          await Worktree.remove({ directory: mate.worktreeDir })
+          console.log(`[xethryon:swarm] worktree removed for ${config.name}`)
+        }
+      } catch (e) {
+        console.error(`[xethryon:swarm] worktree cleanup failed for ${config.name}:`, e)
+      }
+    }
     unregisterTeammate(agentId)
   }
 }
@@ -444,8 +513,8 @@ async function runTeammateSession(
 /**
  * Build the system prompt injected into a teammate's session.
  */
-function buildTeammatePrompt(config: TeammateSpawnConfig): string {
-  return [
+function buildTeammatePrompt(config: TeammateSpawnConfig, worktreeDir?: string, worktreeBranch?: string): string {
+  const lines = [
     `You are a teammate named "${config.name}" on team "${config.teamName}".`,
     "",
     "## Your Assignment",
@@ -453,11 +522,28 @@ function buildTeammatePrompt(config: TeammateSpawnConfig): string {
     "",
     "## Rules",
     "- Focus only on your assigned task",
-    "- Do not modify files outside your scope unless necessary",
     "- When finished, summarize what you did clearly",
     "- If you encounter a blocker, describe it in your output",
-    config.description ? `\n## Context\n${config.description}` : "",
-  ].join("\n")
+  ]
+
+  if (worktreeBranch && worktreeDir) {
+    lines.push(
+      "",
+      "## Git Worktree Isolation",
+      `You are working on branch "${worktreeBranch}" in your own isolated worktree.`,
+      "Your changes are isolated from other teammates — no merge conflicts possible.",
+      "When you finish your task, commit your changes:",
+      `  git add -A && git commit -m "your summary"`,
+    )
+  } else {
+    lines.push("- Do not modify files outside your scope unless necessary")
+  }
+
+  if (config.description) {
+    lines.push("", "## Context", config.description)
+  }
+
+  return lines.join("\n")
 }
 
 /**

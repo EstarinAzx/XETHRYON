@@ -31,6 +31,9 @@ export interface TeamMember {
   sessionId?: string
   isActive?: boolean
   backendType: "in-process"
+  worktreeDir?: string
+  worktreeBranch?: string
+  workspaceId?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -169,4 +172,7 @@ export interface ActiveTeammate {
   sessionId: string
   abortController: AbortController
   status: TeammateStatus
+  worktreeDir?: string
+  worktreeBranch?: string
+  workspaceId?: string
 }
