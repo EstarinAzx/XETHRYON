@@ -58,6 +58,8 @@ This can chain: a single prompt can result in planning, implementation, verifica
 ### Swarm Orchestration
 Parallel and sequential multi-agent workflows via isolated sub-sessions with file-based IPC and shared task boards. **Requires autonomy mode (`F4`) to be ON.**
 
+**Git worktree isolation** — each teammate gets its own git worktree with a dedicated branch (`opencode/swarm-<team>-<agent>`). Parallel agents can freely edit any files without merge conflicts. Non-git projects fall back to shared directory mode. Worktrees are automatically cleaned up when the agent finishes.
+
 **Event-driven cascade** — when a teammate finishes a task, the post-task pipeline in `spawn.ts` automatically:
 1. Marks the task as completed
 2. Injects a `[SWARM]` status message into the coordinator's session
@@ -260,6 +262,7 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 | Bundled Skills System | Claude Code (ported) |
 | Swarm Orchestration | Claude Code (ported) |
 | Event-Driven Cascade + Auto-Inject | Original |
+| Git Worktree Isolation | Original (inspired by opencode-ensemble) |
 | Injection Labels (❐ XETHRYON) | Original |
 | Live Swarm Dashboard | Original |
 | Cross-Session Memory Retrieval | Original |
