@@ -338,6 +338,49 @@ async function runTeammateSession(
             },
           })
         }
+
+        // ─── Cascade: auto-unblock + auto-spawn dependent tasks ──────
+        // When a task completes, check if any blocked tasks are now ready.
+        // This makes the swarm fully event-driven — no team_await polling needed.
+        try {
+          const freshTasks = await listTasks(config.teamName)
+          const teamFile2 = await readTeamFileAsync(config.teamName)
+
+          for (const task of freshTasks) {
+            if (task.status !== "blocked" || task.blockedBy.length === 0) continue
+
+            const allDepsCompleted = task.blockedBy.every((depId) => {
+              const dep = freshTasks.find((t) => t.id === depId)
+              return dep?.status === "completed"
+            })
+
+            if (!allDepsCompleted) continue
+
+            // Unblock the task
+            await updateTask(config.teamName, task.id, {
+              blockedBy: [] as any,
+              status: task.owner ? "in_progress" : "pending",
+            })
+
+            // Auto-spawn agent if task has an owner
+            if (task.owner && teamFile2) {
+              const member = teamFile2.members.find((m) => m.name === task.owner)
+              if (member && !isTeammateRunning(member.agentId)) {
+                await spawnTeammate({
+                  name: member.name,
+                  teamName: config.teamName,
+                  prompt: task.description,
+                  agentType: member.agentType,
+                  model: member.model,
+                  description: task.description,
+                  color: member.color,
+                })
+              }
+            }
+          }
+        } catch {
+          // cascade is best-effort — non-fatal
+        }
       } catch {
         // task board may not exist — non-fatal
       }
