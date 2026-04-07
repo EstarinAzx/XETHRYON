@@ -153,9 +153,25 @@ async function runTeammateSession(
   const { MessageID } = await getSchemaModule()
 
   try {
-    // Create a new sub-session
+    // Create a new sub-session with permissive ruleset.
+    // Swarm agents run headless — no TUI to approve permissions.
+    // Without this, agents hang forever on "allow once / whitelist / deny" prompts.
     const session = await Session.create({
       title: `[Swarm] ${config.name} — ${config.description ?? config.teamName}`,
+      permission: [
+        { permission: "read", pattern: "*", action: "allow" },
+        { permission: "edit", pattern: "*", action: "allow" },
+        { permission: "write", pattern: "*", action: "allow" },
+        { permission: "bash", pattern: "*", action: "allow" },
+        { permission: "grep", pattern: "*", action: "allow" },
+        { permission: "glob", pattern: "*", action: "allow" },
+        { permission: "list", pattern: "*", action: "allow" },
+        { permission: "apply_patch", pattern: "*", action: "allow" },
+        { permission: "multiedit", pattern: "*", action: "allow" },
+        { permission: "webfetch", pattern: "*", action: "allow" },
+        { permission: "websearch", pattern: "*", action: "allow" },
+        { permission: "task", pattern: "*", action: "allow" },
+      ],
     })
 
     if (signal.aborted) {
