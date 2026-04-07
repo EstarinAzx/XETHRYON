@@ -170,7 +170,7 @@ async function runTeammateSession(
         const worktreeInfo = await Worktree.create({ name: worktreeName })
         worktreeDir = worktreeInfo.directory
         worktreeBranch = worktreeInfo.branch
-        console.log(`[xethryon:swarm] worktree created for ${config.name}: ${worktreeDir} (branch: ${worktreeBranch})`)
+
 
         // Create workspace to bind the session to the worktree directory
         try {
@@ -182,13 +182,13 @@ async function runTeammateSession(
             extra: null,
           })
           workspaceId = ws.id
-          console.log(`[xethryon:swarm] workspace created for ${config.name}: ${workspaceId}`)
+
         } catch (wsErr) {
-          console.error(`[xethryon:swarm] workspace creation failed for ${config.name}, using prompt-based CWD:`, wsErr)
+
         }
       }
     } catch (wtErr) {
-      console.error(`[xethryon:swarm] worktree creation failed for ${config.name}, using shared directory:`, wtErr)
+
     }
 
     // Store worktree info in runtime state
@@ -428,12 +428,12 @@ async function runTeammateSession(
                   model: member.model,
                   description: task.description,
                   color: member.color,
-                }).catch((err) => console.error("[swarm:cascade] spawn failed:", err))
+                }).catch(() => {})
               }
             }
           }
         } catch (err) {
-          console.error("[swarm:cascade] cascade failed:", err)
+
         }
       } catch {
         // task board may not exist — non-fatal
@@ -514,7 +514,7 @@ async function runTeammateSession(
           if (dryRun.exitCode !== 0) {
             // Conflict detected — abort and preserve branch
             Bun.spawnSync(["git", "merge", "--abort"], { cwd: mainCwd })
-            console.error(`[xethryon:swarm] merge conflict for ${config.name} — branch "${branch}" preserved for manual merge`)
+
           } else {
             // No conflict — commit the merge
             const commitResult = Bun.spawnSync(["git", "commit", "--no-edit", "-m", `swarm: merge ${config.name} (${branch})`], {
@@ -522,10 +522,10 @@ async function runTeammateSession(
               env: mergeEnv,
             })
             if (commitResult.exitCode === 0) {
-              console.log(`[xethryon:swarm] merged ${branch} into current branch for ${config.name}`)
+
             } else {
               // Nothing to commit (empty merge) — that's fine
-              console.log(`[xethryon:swarm] merge for ${config.name}: no changes to commit (branch may be empty)`)
+
             }
           }
         } catch (mergeErr: any) {
@@ -534,7 +534,7 @@ async function runTeammateSession(
             const { Instance } = await import("../../project/instance.js")
             Bun.spawnSync(["git", "merge", "--abort"], { cwd: Instance.worktree })
           } catch { /* already clean */ }
-          console.error(`[xethryon:swarm] merge failed for ${config.name} — branch "${mate.worktreeBranch}" preserved:`, mergeErr?.message ?? mergeErr)
+
         }
       }
 
@@ -543,10 +543,10 @@ async function runTeammateSession(
         if (mate.workspaceId) {
           const { Workspace } = await import("../../control-plane/workspace.js")
           await Workspace.remove(mate.workspaceId as any)
-          console.log(`[xethryon:swarm] workspace removed for ${config.name}`)
+
         }
       } catch (e) {
-        console.error(`[xethryon:swarm] workspace cleanup failed for ${config.name}:`, e)
+
       }
 
       // Step 3: Remove worktree directory (branch stays if merge failed)
@@ -554,10 +554,10 @@ async function runTeammateSession(
         if (mate.worktreeDir) {
           const { Worktree } = await import("../../worktree/index.js")
           await Worktree.remove({ directory: mate.worktreeDir })
-          console.log(`[xethryon:swarm] worktree removed for ${config.name}`)
+
         }
       } catch (e) {
-        console.error(`[xethryon:swarm] worktree cleanup failed for ${config.name}:`, e)
+
       }
     }
     unregisterTeammate(agentId)
