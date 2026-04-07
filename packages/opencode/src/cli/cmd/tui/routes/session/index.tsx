@@ -1256,6 +1256,11 @@ function UserMessage(props: {
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
 
+  const isInjection = createMemo(() => {
+    const t = text()?.text ?? ""
+    return t.startsWith("[SWARM]")
+  })
+
   return (
     <>
       <Show when={text()}>
@@ -1265,9 +1270,14 @@ function UserMessage(props: {
         >
           {/* User label bar */}
           <box flexDirection="row" gap={1} paddingLeft={1}>
-            <text fg={color()}>
-              <b>{"▸ YOU"}</b>
+            <text fg={isInjection() ? theme.accent : color()}>
+              <b>{isInjection() ? "❐ XETHRYON" : "▸ YOU"}</b>
             </text>
+            <Show when={isInjection()}>
+              <text>
+                <span style={{ bg: theme.accent, fg: theme.background, bold: true }}> INJECTION </span>
+              </text>
+            </Show>
             <Show when={metadataVisible()}>
               <Show when={!queued()} fallback={
                 <text>
@@ -1296,11 +1306,11 @@ function UserMessage(props: {
             paddingRight={2}
             backgroundColor={theme.backgroundPanel}
             border={["left"]}
-            borderColor={color()}
+            borderColor={isInjection() ? theme.accent : color()}
             customBorderChars={SplitBorder.customBorderChars}
             flexShrink={0}
           >
-            <text fg={theme.text}>{text()?.text}</text>
+            <text fg={isInjection() ? theme.accent : theme.text}>{text()?.text}</text>
             <Show when={files().length}>
               <box flexDirection="row" paddingTop={1} gap={1} flexWrap="wrap">
                 <For each={files()}>
