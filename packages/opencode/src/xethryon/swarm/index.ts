@@ -114,3 +114,7 @@ export {
   stopTeammate,
   isTeammateRunning,
 } from "./spawn.js"
+
+// Events
+export type { SwarmTaskEvent } from "./events.js"
+export { emitTaskDone, onTaskDone } from "./events.js"

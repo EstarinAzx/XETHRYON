@@ -7,6 +7,7 @@ import {
   For,
   Match,
   on,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -246,6 +247,88 @@ export function Session() {
           .catch(() => {})
       }, 300)
     }
+  })
+
+  // ─── Swarm auto-inject ──────────────────────────────────────────────
+  // When a swarm task completes/fails, debounce 3s and inject a
+  // continuation message so the coordinator wakes up and reviews.
+  // This is event-driven — no polling required.
+  let swarmInjectTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingSwarmEvents: Array<{ subject: string; owner: string; status: string; wrote: string[]; done: number; total: number }> = []
+
+  // Use globalThis directly — same Symbol.for key as events.ts
+  // This avoids import issues in the Vite-bundled TUI.
+  const SWARM_EMITTER_KEY = Symbol.for("xethryon.swarm.eventEmitter")
+  function getSwarmEmitter(): EventTarget {
+    if (!(globalThis as any)[SWARM_EMITTER_KEY]) {
+      ;(globalThis as any)[SWARM_EMITTER_KEY] = new EventTarget()
+    }
+    return (globalThis as any)[SWARM_EMITTER_KEY]
+  }
+  const swarmHandler = (e: Event) => {
+    const evt = (e as CustomEvent).detail
+    // Buffer events for debouncing
+    pendingSwarmEvents.push({
+      subject: evt.taskSubject,
+      owner: evt.owner,
+      status: evt.status,
+      wrote: evt.wrote,
+      done: evt.progress.done,
+      total: evt.progress.total,
+    })
+
+    // Clear existing timer and set new debounce
+    if (swarmInjectTimer) clearTimeout(swarmInjectTimer)
+    swarmInjectTimer = setTimeout(() => {
+      if (pendingSwarmEvents.length === 0) return
+
+      const events = [...pendingSwarmEvents]
+      pendingSwarmEvents = []
+      swarmInjectTimer = null
+
+      // Only inject if coordinator is idle and autonomy is enabled
+      const status = sync.data.session_status?.[route.sessionID]
+      if (status?.type !== "idle" || !isAutonomyEnabled()) return
+
+      // Check if all done — no injection needed
+      const last = events[events.length - 1]
+      if (last.done >= last.total) return
+
+      // Build injection message
+      const lines = events.map((e) => {
+        const emoji = e.status === "completed" ? "✓" : "✗"
+        const files = e.wrote.length > 0 ? ` (wrote: ${e.wrote.join(", ")})` : ""
+        return `${emoji} ${e.subject} (${e.owner}) ${e.status}${files}`
+      })
+      const progress = `Progress: ${last.done}/${last.total} done`
+      const text = `[SWARM UPDATE] ${lines.join(" | ")}. ${progress}. Call team_await to check your team and take action.`
+
+      const selectedModel = local.model.current()
+      if (!selectedModel || !route.sessionID) return
+
+      sdk.client.session
+        .prompt({
+          sessionID: route.sessionID,
+          ...selectedModel,
+          messageID: MessageID.ascending(),
+          agent: local.agent.current().name,
+          model: selectedModel,
+          parts: [
+            {
+              id: PartID.ascending(),
+              type: "text",
+              text,
+            },
+          ],
+        })
+        .catch(() => {})
+    }, 3000) // 3-second debounce to batch concurrent completions
+  }
+  getSwarmEmitter().addEventListener("swarm:task-done", swarmHandler)
+
+  onCleanup(() => {
+    getSwarmEmitter().removeEventListener("swarm:task-done", swarmHandler)
+    if (swarmInjectTimer) clearTimeout(swarmInjectTimer)
   })
 
   let scroll: ScrollBoxRenderable

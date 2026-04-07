@@ -16,6 +16,7 @@ import type { TeammateSpawnConfig, SpawnResult, ActiveTeammate } from "./types.j
 import { formatAgentId, sanitizeName } from "./identity.js"
 import { addMemberToTeam, setMemberActive } from "./team.js"
 import { writeToMailbox } from "./mailbox.js"
+import { emitTaskDone } from "./events.js"
 import {
   registerTeammate,
   unregisterTeammate,
@@ -265,6 +266,20 @@ async function runTeammateSession(
                 failureKind: "deterministic",
               },
             })
+            const snap = await listTasks(config.teamName)
+            emitTaskDone({
+              teamName: config.teamName,
+              taskId: task.id,
+              taskSubject: task.subject,
+              owner: config.name,
+              status: "failed",
+              wrote: wroteFiles,
+              notes: verification.failures,
+              progress: {
+                done: snap.filter((t) => ["completed", "deleted"].includes(t.status)).length,
+                total: snap.filter((t) => t.status !== "deleted").length,
+              },
+            })
             continue
           }
 
@@ -279,6 +294,20 @@ async function runTeammateSession(
                 failureKind: "transient",
               },
             })
+            const snap = await listTasks(config.teamName)
+            emitTaskDone({
+              teamName: config.teamName,
+              taskId: task.id,
+              taskSubject: task.subject,
+              owner: config.name,
+              status: "failed",
+              wrote: [],
+              notes: ["agent finished without writing files"],
+              progress: {
+                done: snap.filter((t) => ["completed", "deleted"].includes(t.status)).length,
+                total: snap.filter((t) => t.status !== "deleted").length,
+              },
+            })
             continue
           }
 
@@ -286,6 +315,20 @@ async function runTeammateSession(
           await updateTask(config.teamName, task.id, {
             status: "completed",
             result: { ...taskResult, status: "success" },
+          })
+          const snap = await listTasks(config.teamName)
+          emitTaskDone({
+            teamName: config.teamName,
+            taskId: task.id,
+            taskSubject: task.subject,
+            owner: config.name,
+            status: "completed",
+            wrote: wroteFiles,
+            notes: [],
+            progress: {
+              done: snap.filter((t) => ["completed", "deleted"].includes(t.status)).length,
+              total: snap.filter((t) => t.status !== "deleted").length,
+            },
           })
         }
       } catch {
