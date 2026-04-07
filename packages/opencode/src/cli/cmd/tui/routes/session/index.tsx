@@ -250,11 +250,13 @@ export function Session() {
   })
 
   // ─── Swarm auto-inject ──────────────────────────────────────────────
-  // When a swarm task completes/fails, debounce 3s and inject a
-  // continuation message so the coordinator wakes up and reviews.
-  // This is event-driven — no polling required.
-  let swarmInjectTimer: ReturnType<typeof setTimeout> | null = null
+  // When a swarm task completes/fails, buffer events and set a flag.
+  // A reactive createEffect watches for coordinator idle + flag set → inject.
+  // This mirrors the pendingAutoSwitch pattern: the coordinator might be
+  // busy (running team_await) when the event fires, so we wait until idle.
+  let pendingSwarmInject = false
   let pendingSwarmEvents: Array<{ subject: string; owner: string; status: string; wrote: string[]; done: number; total: number }> = []
+  let swarmDebounce: ReturnType<typeof setTimeout> | null = null
 
   // Use globalThis directly — same Symbol.for key as events.ts
   // This avoids import issues in the Vite-bundled TUI.
@@ -265,9 +267,9 @@ export function Session() {
     }
     return (globalThis as any)[SWARM_EMITTER_KEY]
   }
+
   const swarmHandler = (e: Event) => {
     const evt = (e as CustomEvent).detail
-    // Buffer events for debouncing
     pendingSwarmEvents.push({
       subject: evt.taskSubject,
       owner: evt.owner,
@@ -277,20 +279,30 @@ export function Session() {
       total: evt.progress.total,
     })
 
-    // Clear existing timer and set new debounce
-    if (swarmInjectTimer) clearTimeout(swarmInjectTimer)
-    swarmInjectTimer = setTimeout(() => {
-      if (pendingSwarmEvents.length === 0) return
+    // Debounce: wait 3s to batch concurrent completions, then set flag
+    if (swarmDebounce) clearTimeout(swarmDebounce)
+    swarmDebounce = setTimeout(() => {
+      swarmDebounce = null
+      // Set the reactive flag — createEffect below will fire when idle
+      pendingSwarmInject = true
+      // Force the createEffect to re-evaluate by reading session_status
+      // (SolidJS tracks the read in createEffect, so we just set the flag
+      // and poke the effect by triggering a read on next idle transition)
+    }, 3000)
+  }
+  getSwarmEmitter().addEventListener("swarm:task-done", swarmHandler)
+
+  // Reactive listener: injects when coordinator goes idle AND swarm events are pending
+  createEffect(() => {
+    const status = sync.data.session_status?.[route.sessionID]
+    if (status?.type === "idle" && pendingSwarmInject && isAutonomyEnabled()) {
+      pendingSwarmInject = false
 
       const events = [...pendingSwarmEvents]
       pendingSwarmEvents = []
-      swarmInjectTimer = null
+      if (events.length === 0) return
 
-      // Only inject if coordinator is idle and autonomy is enabled
-      const status = sync.data.session_status?.[route.sessionID]
-      if (status?.type !== "idle" || !isAutonomyEnabled()) return
-
-      // Check if all done — no injection needed
+      // Don't inject if all tasks are already done
       const last = events[events.length - 1]
       if (last.done >= last.total) return
 
@@ -306,29 +318,31 @@ export function Session() {
       const selectedModel = local.model.current()
       if (!selectedModel || !route.sessionID) return
 
-      sdk.client.session
-        .prompt({
-          sessionID: route.sessionID,
-          ...selectedModel,
-          messageID: MessageID.ascending(),
-          agent: local.agent.current().name,
-          model: selectedModel,
-          parts: [
-            {
-              id: PartID.ascending(),
-              type: "text",
-              text,
-            },
-          ],
-        })
-        .catch(() => {})
-    }, 3000) // 3-second debounce to batch concurrent completions
-  }
-  getSwarmEmitter().addEventListener("swarm:task-done", swarmHandler)
+      // Small delay to let the UI settle (same as pendingAutoSwitch)
+      setTimeout(() => {
+        sdk.client.session
+          .prompt({
+            sessionID: route.sessionID,
+            ...selectedModel,
+            messageID: MessageID.ascending(),
+            agent: local.agent.current().name,
+            model: selectedModel,
+            parts: [
+              {
+                id: PartID.ascending(),
+                type: "text",
+                text,
+              },
+            ],
+          })
+          .catch(() => {})
+      }, 500)
+    }
+  })
 
   onCleanup(() => {
     getSwarmEmitter().removeEventListener("swarm:task-done", swarmHandler)
-    if (swarmInjectTimer) clearTimeout(swarmInjectTimer)
+    if (swarmDebounce) clearTimeout(swarmDebounce)
   })
 
   let scroll: ScrollBoxRenderable
