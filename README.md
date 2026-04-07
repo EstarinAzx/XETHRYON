@@ -58,11 +58,15 @@ This can chain: a single prompt can result in planning, implementation, verifica
 ### Swarm Orchestration
 Parallel and sequential multi-agent workflows via isolated sub-sessions with file-based IPC and shared task boards.
 
-**Coffee-break pattern** — the coordinator deploys agents, takes short "coffee breaks" via `team_await`, then checks progress and decides whether to retry, nudge, or finalize. No manual intervention needed.
+**Event-driven auto-inject** — when a teammate finishes a task, the server automatically injects a `[SWARM UPDATE]` message into the coordinator's session via `SessionPrompt.prompt()`. No polling, no manual nudging. The coordinator wakes up, reviews progress, and decides its next move — fully hands-off.
+
+**Coffee-break pattern** — the coordinator deploys agents, goes idle, and gets woken up by the event system when tasks complete. Multiple completions within 3 seconds are batched into a single update.
 
 **Dependency chains** — tasks can declare `blockedBy` dependencies. Blocked tasks stay `pending` until their prerequisites complete, then auto-spawn.
 
 **Live Dashboard** (`/swarm`) — real-time mission control overlay showing team name, agent statuses, task progress with dependency info, and a progress bar. Polls the filesystem every second.
+
+**Headless permissions** — swarm sub-sessions run with a permissive ruleset (read, write, edit, bash, external directories, etc.) so background agents never hang on approval prompts.
 
 Tools: `team_create`, `team_delete`, `send_message`, `task_create`, `task_get`, `task_update`, `task_list`, `task_stop`, `team_await`.
 
@@ -224,8 +228,12 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 │                    ↓                          │
 │         Memory Post-Turn Hook (extract/store)  │
 │                    ↓                          │
-│     Swarm Orchestration (team_await loop)       │
-│         ↕ filesystem IPC + task board           │
+│     Swarm Orchestration                        │
+│       ├─ spawn.ts → sub-sessions (headless)    │
+│       ├─ events.ts → task completion emitter   │
+│       ├─ debounce (3s) → batch completions     │
+│       └─ SessionPrompt.prompt() → auto-inject  │
+│           (server-side, no TUI dependency)      │
 └───────────────────────────────────────────────┘
 ```
 
@@ -239,6 +247,7 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 | Memory Persistence + AutoDream | Claude Code (ported) |
 | Bundled Skills System | Claude Code (ported) |
 | Swarm Orchestration | Claude Code (ported) |
+| Event-Driven Auto-Inject | Original (inspired by opencode-ensemble) |
 | Live Swarm Dashboard | Original |
 | Cross-Session Memory Retrieval | Original |
 | Self-Reflection Loop | Original |
