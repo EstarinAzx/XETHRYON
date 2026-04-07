@@ -84,35 +84,27 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null
 const DEBOUNCE_MS = 3000
 
 /**
- * Call the internal prompt_async endpoint to inject a message into
- * the coordinator session. Fire-and-forget — returns immediately.
+ * Inject a message into the coordinator session by calling
+ * SessionPrompt.prompt() directly — same function spawn.ts uses.
+ * Fire-and-forget — we don't await the full loop, just fire prompt().
  */
-async function injectPromptAsync(sessionId: string, text: string): Promise<void> {
+async function injectIntoCoordinator(sessionId: string, text: string): Promise<void> {
   try {
-    // Dynamic import to avoid circular deps — Server is initialized
-    // by the time swarm tasks complete.
-    const { Server } = await import("../../server/server.js")
-    const server = Server.Default()
+    // Dynamic imports — same pattern as spawn.ts
+    const { SessionPrompt } = await import("../../session/prompt.js")
+    const { MessageID } = await import("../../session/schema.js")
 
-    const body = JSON.stringify({
-      parts: [{ type: "text", text }],
+    console.error(`[swarm:inject] injecting into session ${sessionId}`)
+
+    // Fire-and-forget: prompt() creates a user message and runs the loop
+    SessionPrompt.prompt({
+      sessionID: sessionId as any,
+      messageID: MessageID.ascending(),
+      parts: [{ type: "text" as const, text }],
+    }).catch((err) => {
+      console.error("[swarm:inject] prompt failed:", err)
     })
-
-    const request = new Request(
-      `http://localhost/session/${sessionId}/prompt_async`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-      },
-    )
-
-    const response = await server.fetch(request)
-    if (!response.ok) {
-      console.error(`[swarm:inject] prompt_async failed: ${response.status}`)
-    }
   } catch (err) {
-    // Non-fatal — coordinator just won't wake up automatically
     console.error("[swarm:inject] failed to inject:", err)
   }
 }
@@ -164,6 +156,6 @@ onTaskDone((evt) => {
     const text = `[SWARM UPDATE] ${lines.join(" | ")}. ${progress}. ${action}`
 
     // Fire-and-forget — the server handles the rest
-    injectPromptAsync(sessionId, text)
+    injectIntoCoordinator(sessionId, text)
   }, DEBOUNCE_MS)
 })
