@@ -18,6 +18,7 @@ import { Skill } from "@/skill"
 import { loadMemoryPrompt, retrieveRelevantMemories } from "@/xethryon/memory"
 import { getAutonomyPrompt } from "@/xethryon/autonomy"
 import { getGitContextPrompt } from "@/xethryon/git"
+import { getSwarmPromptBlock } from "@/xethryon/swarm"
 
 export namespace SystemPrompt {
   export function provider(model: Provider.Model) {
@@ -111,6 +112,16 @@ export namespace SystemPrompt {
    */
   export async function gitContext(): Promise<string | undefined> {
     const result = await getGitContextPrompt()
+    return result ?? undefined
+  }
+
+  /**
+   * Get the swarm team context for system prompt injection.
+   * Returns team state (members, tasks, unread message count) when the
+   * session is a coordinator, or undefined for non-swarm sessions.
+   */
+  export async function swarmContext(sessionId: string): Promise<string | undefined> {
+    const result = await getSwarmPromptBlock(sessionId)
     return result ?? undefined
   }
 }

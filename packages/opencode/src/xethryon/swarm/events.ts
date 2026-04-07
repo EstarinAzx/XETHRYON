@@ -139,19 +139,14 @@ onTaskDone((evt) => {
     }
     if (!sessionId) return
 
-    // Build the injection message
+    // Build lightweight wake-up nudge.
+    // Detailed team state is now in the system prompt (prompt-transform.ts)
+    // — the injection just needs to wake the coordinator for a new turn.
     const last = events[events.length - 1]
     const allDone = last.done >= last.total
-    const lines = events.map((e) => {
-      const emoji = e.status === "completed" ? "✓" : "✗"
-      const files = e.wrote.length > 0 ? ` (wrote: ${e.wrote.join(", ")})` : ""
-      return `${emoji} ${e.subject} (${e.owner}) ${e.status}${files}`
-    })
-    const progress = `Progress: ${last.done}/${last.total} done`
-    const action = allDone
-      ? "All tasks complete. Call team_await to collect final results and summarize."
-      : "Call team_await to check your team and take action."
-    const text = `[SWARM UPDATE] ${lines.join(" | ")}. ${progress}. ${action}`
+    const text = allDone
+      ? "[SWARM] All tasks complete. Check your team status and summarize results."
+      : "[SWARM] Team activity detected. Check your team status."
 
     // Fire-and-forget — the server handles the rest
     injectIntoCoordinator(sessionId, text)

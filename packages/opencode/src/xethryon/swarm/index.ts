@@ -121,3 +121,6 @@ export {
 // Events
 export type { SwarmTaskEvent } from "./events.js"
 export { emitTaskDone, onTaskDone } from "./events.js"
+
+// Prompt transform
+export { getSwarmPromptBlock } from "./prompt-transform.js"

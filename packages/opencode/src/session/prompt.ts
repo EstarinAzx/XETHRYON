@@ -1554,13 +1554,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
                 yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-                const [skills, env, instructions, modelMsgs, memoryPrompt, gitCtx] = yield* Effect.all([
+                const [skills, env, instructions, modelMsgs, memoryPrompt, gitCtx, swarmCtx] = yield* Effect.all([
                   Effect.promise(() => SystemPrompt.skills(agent)),
                   Effect.promise(() => SystemPrompt.environment(model)),
                   instruction.system().pipe(Effect.orDie),
                   Effect.promise(() => MessageV2.toModelMessages(msgs, model)),
                   Effect.promise(() => SystemPrompt.memory()),
                   Effect.promise(() => SystemPrompt.gitContext()),
+                  Effect.promise(() => SystemPrompt.swarmContext(sessionID)),
                 ])
 
                 // Extract user query for memory retrieval
@@ -1615,6 +1616,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   ...(recalledMemories ? [recalledMemories] : []),
                   ...(gitCtx ? [gitCtx] : []),
                   ...(autonomyPrompt ? [autonomyPrompt] : []),
+                  ...(swarmCtx ? [swarmCtx] : []),
                   modeIdentity,
                 ]
                 const format = lastUser.format ?? { type: "text" as const }
