@@ -483,10 +483,38 @@ async function runTeammateSession(
       config.teamName,
     ).catch(() => {})
   } finally {
-    // ─── Worktree Cleanup ──────────────────────────────────────────
-    // Remove the git worktree + workspace after the agent finishes.
+    // ─── Worktree Merge + Cleanup ─────────────────────────────────
+    // 1. Merge the agent's branch back into the current branch
+    // 2. Remove the workspace binding
+    // 3. Remove the git worktree + branch
     const mate = getTeammate(agentId)
     if (mate?.worktreeDir || mate?.workspaceId) {
+      // Step 1: Auto-merge the agent's branch back into the parent branch
+      if (mate.worktreeBranch && mate.worktreeDir) {
+        try {
+          const { execSync } = await import("child_process")
+          const { Instance } = await import("../../project/instance.js")
+          const mainCwd = Instance.worktree
+
+          // Merge the agent's branch into the current branch (no-edit = auto-commit)
+          execSync(`git merge "${mate.worktreeBranch}" --no-edit --no-ff -m "swarm: merge ${config.name} (${mate.worktreeBranch})"`, {
+            cwd: mainCwd,
+            stdio: "pipe",
+            timeout: 30_000,
+          })
+          console.log(`[xethryon:swarm] merged ${mate.worktreeBranch} into current branch for ${config.name}`)
+        } catch (mergeErr: any) {
+          // Merge conflict — abort and keep the branch for manual resolution
+          try {
+            const { execSync } = await import("child_process")
+            const { Instance } = await import("../../project/instance.js")
+            execSync("git merge --abort", { cwd: Instance.worktree, stdio: "pipe" })
+          } catch { /* already clean */ }
+          console.error(`[xethryon:swarm] merge failed for ${config.name} — branch "${mate.worktreeBranch}" preserved for manual merge:`, mergeErr?.message ?? mergeErr)
+        }
+      }
+
+      // Step 2: Remove workspace binding
       try {
         if (mate.workspaceId) {
           const { Workspace } = await import("../../control-plane/workspace.js")
@@ -496,6 +524,8 @@ async function runTeammateSession(
       } catch (e) {
         console.error(`[xethryon:swarm] workspace cleanup failed for ${config.name}:`, e)
       }
+
+      // Step 3: Remove worktree directory (branch stays if merge failed)
       try {
         if (mate.worktreeDir) {
           const { Worktree } = await import("../../worktree/index.js")
