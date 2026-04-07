@@ -239,8 +239,8 @@ async function runTeammateSession(
           // Check if all blockedBy dependencies are completed
           if (task.blockedBy.length > 0) {
             const freshTasks = await listTasks(config.teamName)
-            const allDepsCompleted = task.blockedBy.every((depId) => {
-              const dep = freshTasks.find((t) => t.id === depId)
+            const allDepsCompleted = task.blockedBy.every((depRef) => {
+              const dep = freshTasks.find((t) => t.id === depRef || t.subject === depRef)
               return dep?.status === "completed"
             })
             if (!allDepsCompleted) {
@@ -356,9 +356,9 @@ async function runTeammateSession(
           for (const task of freshTasks) {
             if (task.status !== "blocked" || task.blockedBy.length === 0) continue
 
-            // Check if ALL deps are completed (using fresh read)
-            const allDepsCompleted = task.blockedBy.every((depId) => {
-              const dep = freshTasks.find((t) => t.id === depId)
+            // blockedBy can contain task IDs OR subject names — match both
+            const allDepsCompleted = task.blockedBy.every((depRef) => {
+              const dep = freshTasks.find((t) => t.id === depRef || t.subject === depRef)
               return dep?.status === "completed"
             })
 

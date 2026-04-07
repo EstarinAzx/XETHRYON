@@ -131,8 +131,8 @@ export const TeamAwaitTool = Tool.define("team_await", {
     for (const task of tasks) {
       if (!["pending", "blocked"].includes(task.status) || task.blockedBy.length === 0) continue
 
-      const allDepsCompleted = task.blockedBy.every((depId) => {
-        const dep = tasks.find((t) => t.id === depId)
+      const allDepsCompleted = task.blockedBy.every((depRef) => {
+        const dep = tasks.find((t) => t.id === depRef || t.subject === depRef)
         return dep?.status === "completed"
       })
 
