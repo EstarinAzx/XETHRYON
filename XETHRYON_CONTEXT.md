@@ -80,10 +80,11 @@ opencode-dev/                          # Root monorepo
 │   │   │   │   │       ├── remember.ts
 │   │   │   │   │       ├── simplify.ts
 │   │   │   │   │       └── verify.ts
-│   │   │   │   └── swarm/             # Multi-agent team system (11 files)
+│   │   │   │   └── swarm/             # Multi-agent team system (12 files)
 │   │   │   │       ├── index.ts       # Barrel exports
-│   │   │   │       ├── spawn.ts       # Core teammate spawning logic
-│   │   │   │       ├── state.ts       # Runtime state (Map of active teammates)
+│   │   │   │       ├── spawn.ts       # Core teammate spawning + headless permissions
+│   │   │   │       ├── events.ts      # ⭐ Event bus + auto-inject into coordinator
+│   │   │   │       ├── state.ts       # Runtime state + coordinator session tracking
 │   │   │   │       ├── team.ts        # Team config CRUD (config.json)
 │   │   │   │       ├── mailbox.ts     # File-based IPC messaging
 │   │   │   │       ├── tasks-board.ts # Shared task board
@@ -91,7 +92,7 @@ opencode-dev/                          # Root monorepo
 │   │   │   │       ├── paths.ts       # Path resolution (.opencode/swarm/...)
 │   │   │   │       ├── identity.ts    # Agent ID formatting
 │   │   │   │       ├── constants.ts   # Constants
-│   │   │   │       └── types.ts       # TypeScript types
+│   │   │   │       └── types.ts       # TypeScript types (TeamFile, ActiveTeammate, etc.)
 │   │   │   └── provider/              # LLM provider adapters
 │   │   └── script/
 │   │       └── build.ts               # Build script
@@ -148,7 +149,7 @@ Agents are defined in `agent/agent.ts`. Each agent has:
 
 ### 3.3 Autonomy System
 
-**Files:** `xethryon/autonomy.ts`, `tool/switch_agent.ts`, `cli/cmd/tui/component/prompt/index.tsx`
+**Files:** `xethryon/autonomy.ts`, `tool/switch_agent.ts`, `tool/external-directory.ts`, `cli/cmd/tui/component/prompt/index.tsx`
 
 **How it works:**
 1. User presses **F4** to toggle autonomy ON/OFF
@@ -157,6 +158,11 @@ Agents are defined in `agent/agent.ts`. Each agent has:
 4. When OFF → `switch_agent` tool physically rejects all calls with an error message
 5. The TUI footer shows `AUTONOMY: ON/OFF`
 6. **State sync:** `sdk.setAutonomy(next)` propagates the toggle to the worker thread via RPC
+
+**Autonomy bypasses:**
+- `switch_agent` tool calls allowed only when autonomy is ON
+- `external_directory` permission prompts bypassed when autonomy is ON (in `external-directory.ts`). This prevents approval prompts from blocking fully hands-off operation.
+- Swarm auto-inject only fires when `XETHRYON_AUTONOMY=1`
 
 **Agent alias mapping in `switch_agent.ts`:**
 - `architect` → `plan`, `construct` → `build`, `recon` → `explore`, etc.
@@ -167,18 +173,61 @@ Agents are defined in `agent/agent.ts`. Each agent has:
 
 **How teammates spawn:**
 1. LLM calls `team_create` tool with team name + teammate configs
-2. `team_create` creates `.opencode/swarm/{team}/config.json`
-3. For each teammate, `spawnTeammate()` in `spawn.ts`:
-   - Creates a new `Session` (sub-session)
+2. `team_create` captures `ctx.sessionID` as the coordinator session ID → stores in `process.env.XETHRYON_COORDINATOR_SESSION` and writes `leadSessionId` to team file JSON
+3. `team_create` creates `.opencode/swarm/{team}/config.json`
+4. For each teammate, `spawnTeammate()` in `spawn.ts`:
+   - Creates a new `Session` with **headless permission ruleset** (all tools auto-allowed, including `external_directory`)
    - Builds a prompt from the teammate's task description
    - Calls `SessionPrompt.prompt()` in background (fire-and-forget)
    - Registers teammate in runtime state (`state.ts`)
-4. When teammate finishes → notifies team lead via mailbox
-5. Team lead polls mailbox using `send_message` tool
+5. When teammate finishes → `emitTaskDone()` fires event with progress + coordinator session ID
+6. **Events system auto-injects** a `[SWARM UPDATE]` message into the coordinator's session
+
+**⭐ Event-Driven Auto-Inject (events.ts):**
+
+This is the core innovation — replaces the old TUI-side polling approach.
+
+```
+teammate finishes → spawn.ts calls emitTaskDone()
+    → events.ts listener buffers the event
+    → 3-second debounce (batches concurrent completions)
+    → reads coordinatorSessionId (from event, or fallback to process.env)
+    → calls SessionPrompt.prompt() directly (same function spawn.ts uses)
+    → coordinator receives [SWARM UPDATE] as a user message
+    → coordinator wakes up and acts autonomously
+```
+
+**Key design decisions:**
+- Uses `Symbol.for("xethryon.swarm.eventEmitter")` for bundler-safe global `EventTarget`
+- Self-subscribing module-level listener — runs at import time when `spawn.ts` loads
+- Direct `SessionPrompt.prompt()` call (NOT the HTTP `prompt_async` endpoint — that failed due to routing issues)
+- Different injection messages for "in-progress" vs "all tasks complete"
+- Only fires when `XETHRYON_AUTONOMY=1`
+- Fire-and-forget: errors are caught and logged to stderr, never crash the process
+
+**Headless sub-session permissions (spawn.ts):**
+```ts
+permission: [
+  { permission: "read", pattern: "*", action: "allow" },
+  { permission: "edit", pattern: "*", action: "allow" },
+  { permission: "write", pattern: "*", action: "allow" },
+  { permission: "bash", pattern: "*", action: "allow" },
+  { permission: "grep", pattern: "*", action: "allow" },
+  { permission: "glob", pattern: "*", action: "allow" },
+  { permission: "list", pattern: "*", action: "allow" },
+  { permission: "apply_patch", pattern: "*", action: "allow" },
+  { permission: "multiedit", pattern: "*", action: "allow" },
+  { permission: "webfetch", pattern: "*", action: "allow" },
+  { permission: "websearch", pattern: "*", action: "allow" },
+  { permission: "task", pattern: "*", action: "allow" },
+  { permission: "external_directory", pattern: "*", action: "allow" },
+]
+```
 
 **File-based IPC:**
 - Inboxes: `.opencode/swarm/{team}/inboxes/{agent}.json`
 - Tasks: `.opencode/swarm/{team}/tasks/tasks.json`
+- Team config: `.opencode/swarm/{team}/config.json` (includes `leadSessionId`)
 - Locking: `.lock` files with `O_CREAT | O_EXCL` (atomic on NTFS)
 
 **Agent type aliases in `spawn.ts`:**
@@ -188,6 +237,12 @@ Agents are defined in `agent/agent.ts`. Each agent has:
 - `verifier`/`tester` → `verification`
 - `orchestrator` → `coordinator`
 - Unknown → defaults to `build`
+
+**Coordinator session tracking (state.ts):**
+- `setCoordinatorSessionId(id)` → writes to `process.env.XETHRYON_COORDINATOR_SESSION`
+- `getCoordinatorSessionId()` → reads from `process.env`
+- `clearCoordinatorSessionId()` → deletes from `process.env`
+- Using `process.env` ensures global access across bundler-duplicated module instances
 
 ### 3.5 Memory System
 
@@ -263,6 +318,11 @@ The pre-push hook runs `bun turbo typecheck` across ALL packages. Some upstream 
 ## 5. Commit History (Recent)
 
 ```
+12a480581 chore: remove debug log that flashed in TUI during swarm inject
+a1ea4f09c fix(autonomy): bypass external_directory permission when autonomy is ON
+997e85d5b fix(swarm): use direct SessionPrompt.prompt() for auto-inject
+d51511600 docs: update README with event-driven auto-inject architecture
+3a5358feb refactor(swarm): migrate auto-inject from TUI to server-side prompt_async
 b3dd89dfc fix(swarm): add agent type alias resolver for teammate spawning
 bae6cee04 fix(swarm): ensure directories exist before acquiring file locks
 43893e189 fix(tui): synchronize autonomy toggle to worker process environment
@@ -292,11 +352,17 @@ dedccb9b6 ui: rename STRATAGEM to ARCHITECT
 - ✅ "agent coder not found" when spawning teammates (fixed: alias resolver)
 - ✅ Dark tint on Xethryon message bubbles (fixed: standard panel backgrounds)
 - ✅ CORE: label and footer mode indicators out of sync
+- ✅ Swarm teammates hanging on permission prompts (fixed: headless ruleset in spawn.ts)
+- ✅ External directory prompts blocking autonomy mode (fixed: bypass in external-directory.ts)
+- ✅ TUI-side swarm auto-inject was fragile and tab-dependent (fixed: server-side SessionPrompt.prompt() injection)
+- ✅ HTTP prompt_async approach failed due to Hono routing issues (fixed: switched to direct SessionPrompt.prompt() call)
+- ✅ Debug log `[swarm:inject]` flashing in TUI (fixed: removed console.error)
 
 ### 6.2 Known / Open
 - ⚠ **`thought_signature` Gemini error:** Gemini Flash with thinking mode requires `thought_signature` in function call parts. This is a provider-level issue in the AI SDK adapter, not in Xethryon code. Swarm may fail when using Gemini models with thinking enabled.
 - ⚠ **Pre-push typecheck failures:** `@opencode-ai/app` has pre-existing TS errors in `custom-elements.d.ts`. Always use `--no-verify` when pushing.
 - ⚠ **Memory system wiring:** The memory module is fully coded but may need verification that `memoryHook.ts` is being called on every prompt turn in `prompt.ts`.
+- ⚠ **Coordinator sometimes lacks `team_await`:** When the coordinator is in CONSTRUCT mode instead of COORDINATE mode, `team_await` may not be in its tool list. The coordinator still works around this by reading files directly, but it's not ideal.
 
 ### 6.3 Development Gotchas
 - **process.env is NOT shared** between TUI thread and worker thread. Any state that needs to cross the boundary MUST use the RPC bridge (`worker.ts` ↔ `thread.ts` ↔ `sdk.tsx`).
@@ -304,6 +370,9 @@ dedccb9b6 ui: rename STRATAGEM to ARCHITECT
 - **Swarm paths use `process.cwd()`** — so swarm data lives in the current project directory under `.opencode/swarm/`.
 - **The build script** auto-detects the channel name from git branch. Branch `xethryon` → channel `xethryon`.
 - **File locking on Windows** uses `"wx"` string flag, NOT numeric `O_EXCL`, to avoid libuv EINVAL errors.
+- **Don't use HTTP `Server.Default().fetch()` for internal swarm injection** — it goes through Hono's WorkspaceRouterMiddleware which adds complexity. Use `SessionPrompt.prompt()` directly instead (same function spawn.ts uses).
+- **`events.ts` self-subscribes at module load time.** The `onTaskDone()` listener is registered when the module is first imported (statically from `spawn.ts`). This means the listener is always active as long as `spawn.ts` has been loaded.
+- **Coordinator session ID has two sources:** (1) `process.env.XETHRYON_COORDINATOR_SESSION` set by `team_create`, and (2) `leadSessionId` field in the team file JSON read by `spawn.ts` at verification time. events.ts checks both as fallbacks.
 
 ---
 
@@ -317,6 +386,12 @@ These are potential features discussed but NOT yet implemented:
 4. **Live Agent Dashboard** — Real-time TUI view of all swarm teammates' status, progress, files touched.
 5. **Skill Marketplace** — Shareable skill packs that users can install/publish.
 6. **Computer Use** — Vision-based GUI interaction using screenshots + pyautogui (high effort, long-term).
+7. **Ensemble-style patterns** — The `opencode-ensemble` plugin (at `D:\eweew\AG\ccleak\opencode-ensemble-main`) has additional ideas worth exploring:
+   - SQLite-backed task boards (vs our filesystem JSON) for better concurrency
+   - Dynamic system prompt transforms (inject team context into system prompt per-session)
+   - Session status tracking via event subscriptions (idle → busy → done state machine)
+8. **Dependency chain auto-spawn** — `blockedBy` dependencies exist in the type system but auto-spawning when prerequisites complete could be more robust.
+9. **Error recovery for auto-inject** — If `SessionPrompt.prompt()` fails during injection, currently catches and logs but doesn't retry. Could add exponential backoff.
 
 ---
 
@@ -327,23 +402,31 @@ These are potential features discussed but NOT yet implemented:
 | Agent definitions | `packages/opencode/src/agent/agent.ts` |
 | Autonomy module | `packages/opencode/src/xethryon/autonomy.ts` |
 | Switch agent tool | `packages/opencode/src/tool/switch_agent.ts` |
-| Swarm spawn logic | `packages/opencode/src/xethryon/swarm/spawn.ts` |
-| Swarm state | `packages/opencode/src/xethryon/swarm/state.ts` |
+| External dir permission | `packages/opencode/src/tool/external-directory.ts` |
+| Team create tool | `packages/opencode/src/tool/team_create.ts` |
+| Swarm spawn + permissions | `packages/opencode/src/xethryon/swarm/spawn.ts` |
+| ⭐ Swarm event bus + auto-inject | `packages/opencode/src/xethryon/swarm/events.ts` |
+| Swarm state + coordinator tracking | `packages/opencode/src/xethryon/swarm/state.ts` |
+| Swarm types (TeamFile, etc.) | `packages/opencode/src/xethryon/swarm/types.ts` |
 | Task board | `packages/opencode/src/xethryon/swarm/tasks-board.ts` |
 | Mailbox IPC | `packages/opencode/src/xethryon/swarm/mailbox.ts` |
+| Team file CRUD | `packages/opencode/src/xethryon/swarm/team.ts` |
 | Memory hook | `packages/opencode/src/xethryon/memory/memoryHook.ts` |
 | Memory public API | `packages/opencode/src/xethryon/memory/index.ts` |
 | Skills registry | `packages/opencode/src/xethryon/skills/registry.ts` |
 | Tool registry | `packages/opencode/src/tool/registry.ts` |
 | TUI prompt | `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` |
-| TUI session view | `packages/opencode/src/cli/cmd/tui/component/session/index.tsx` |
+| TUI session view | `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx` |
 | Worker RPC | `packages/opencode/src/cli/cmd/tui/worker.ts` |
 | TUI thread | `packages/opencode/src/cli/cmd/tui/thread.ts` |
 | SDK context | `packages/opencode/src/cli/cmd/tui/context/sdk.tsx` |
 | Theme file | `packages/opencode/src/cli/cmd/tui/context/theme/xethryon.json` |
 | Session prompt loop | `packages/opencode/src/session/prompt.ts` |
+| Session schema (MessageID, etc.) | `packages/opencode/src/session/schema.ts` |
+| Server (Hono app) | `packages/opencode/src/server/server.ts` |
 | Build script | `packages/opencode/script/build.ts` |
 | README | `README.md` |
+| opencode-ensemble reference | `D:\eweew\AG\ccleak\opencode-ensemble-main\src\index.ts` |
 
 ---
 
@@ -409,4 +492,16 @@ git push origin xethryon --no-verify
 
 ---
 
-*Last updated: 2026-04-05 by Claude (Antigravity)*
+## 10. Environment Variables Reference
+
+| Variable | Default | Set By | Description |
+|----------|---------|--------|-------------|
+| `XETHRYON_AUTONOMY` | `0` | F4 toggle / RPC | Master autonomy flag. When `1`: enables agent switching, skill invocation, bypasses external_directory prompts, enables swarm auto-inject. |
+| `XETHRYON_COORDINATOR_SESSION` | (unset) | `team_create` | Session ID of the coordinator/lead for the active swarm team. Used by events.ts to know where to inject updates. |
+| `XETHRYON_REFLECTION` | `1` | .env / manual | Self-reflection gate before presenting code. |
+| `XETHRYON_GIT_AWARE` | `1` | .env / manual | Git state injection into system prompt context. |
+| `XETHRYON_DEBUG` | `false` | .env / manual | Debug logging for internals. |
+
+---
+
+*Last updated: 2026-04-07 by Claude (Antigravity)*
