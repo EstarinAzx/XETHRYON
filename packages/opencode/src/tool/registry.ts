@@ -191,9 +191,10 @@ export namespace ToolRegistry {
             return model.providerID === ProviderID.opencode || Flag.OPENCODE_ENABLE_EXA
           }
 
-          // Swarm tools are exclusive to COORDINATE mode
+          // Swarm tools require BOTH coordinator mode AND autonomy enabled.
+          // Without autonomy, COORDINATE mode uses the normal subagent `task` tool only.
           const swarmTools = ["team_create", "team_delete", "send_message", "task_create", "task_get", "task_update", "task_list", "task_stop", "team_await"]
-          if (swarmTools.includes(tool.id) && agent?.name !== "coordinator") {
+          if (swarmTools.includes(tool.id) && (agent?.name !== "coordinator" || !isAutonomyEnabled())) {
             return false
           }
 
