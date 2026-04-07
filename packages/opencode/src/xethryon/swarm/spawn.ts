@@ -492,34 +492,49 @@ async function runTeammateSession(
       // Step 1: Auto-merge the agent's branch back into the parent branch
       if (mate.worktreeBranch && mate.worktreeDir) {
         try {
-          const { execSync } = await import("child_process")
           const { Instance } = await import("../../project/instance.js")
           const mainCwd = Instance.worktree
+          const branch = mate.worktreeBranch
 
-          // Prevent git from opening an editor on merge conflicts or commit messages
+          // Use Bun.spawnSync to avoid cmd.exe hanging on Windows
           const mergeEnv = {
             ...process.env,
             GIT_EDITOR: "true",
             GIT_MERGE_AUTOEDIT: "no",
             GIT_TERMINAL_PROMPT: "0",
+            GIT_PAGER: "cat",
           }
 
-          // Merge the agent's branch into the current branch
-          execSync(`git merge "${mate.worktreeBranch}" --no-edit --no-ff -m "swarm: merge ${config.name} (${mate.worktreeBranch})"`, {
+          // First: dry-run — check if merge would conflict
+          const dryRun = Bun.spawnSync(["git", "merge", "--no-commit", "--no-ff", branch], {
             cwd: mainCwd,
-            stdio: "pipe",
-            timeout: 10_000,
             env: mergeEnv,
           })
-          console.log(`[xethryon:swarm] merged ${mate.worktreeBranch} into current branch for ${config.name}`)
+
+          if (dryRun.exitCode !== 0) {
+            // Conflict detected — abort and preserve branch
+            Bun.spawnSync(["git", "merge", "--abort"], { cwd: mainCwd })
+            console.error(`[xethryon:swarm] merge conflict for ${config.name} — branch "${branch}" preserved for manual merge`)
+          } else {
+            // No conflict — commit the merge
+            const commitResult = Bun.spawnSync(["git", "commit", "--no-edit", "-m", `swarm: merge ${config.name} (${branch})`], {
+              cwd: mainCwd,
+              env: mergeEnv,
+            })
+            if (commitResult.exitCode === 0) {
+              console.log(`[xethryon:swarm] merged ${branch} into current branch for ${config.name}`)
+            } else {
+              // Nothing to commit (empty merge) — that's fine
+              console.log(`[xethryon:swarm] merge for ${config.name}: no changes to commit (branch may be empty)`)
+            }
+          }
         } catch (mergeErr: any) {
-          // Merge conflict or timeout — abort and keep the branch for manual resolution
+          // Unexpected error — try to abort any in-progress merge
           try {
-            const { execSync } = await import("child_process")
             const { Instance } = await import("../../project/instance.js")
-            execSync("git merge --abort", { cwd: Instance.worktree, stdio: "pipe", timeout: 5_000 })
+            Bun.spawnSync(["git", "merge", "--abort"], { cwd: Instance.worktree })
           } catch { /* already clean */ }
-          console.error(`[xethryon:swarm] merge failed for ${config.name} — branch "${mate.worktreeBranch}" preserved for manual merge:`, mergeErr?.message ?? mergeErr)
+          console.error(`[xethryon:swarm] merge failed for ${config.name} — branch "${mate.worktreeBranch}" preserved:`, mergeErr?.message ?? mergeErr)
         }
       }
 
