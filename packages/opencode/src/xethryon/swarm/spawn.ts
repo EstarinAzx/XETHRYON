@@ -340,8 +340,15 @@ async function runTeammateSession(
         }
 
         // ─── Cascade: auto-unblock + auto-spawn dependent tasks ──────
-        // When a task completes, check if any blocked tasks are now ready.
-        // This makes the swarm fully event-driven — no team_await polling needed.
+        // Track which tasks just completed so we can unblock dependents.
+        // We check the ORIGINAL allTasks (not a re-read) to avoid JSON flush timing issues.
+        const completedTaskIds = new Set(
+          ownedTasks
+            .filter((t) => allTasks.find((at) => at.id === t.id)?.status !== "completed") // was not already completed
+            .map((t) => t.id),
+        )
+
+        // Now re-read to get the actual current state after our updates
         try {
           const freshTasks = await listTasks(config.teamName)
           const teamFile2 = await readTeamFileAsync(config.teamName)
@@ -349,6 +356,7 @@ async function runTeammateSession(
           for (const task of freshTasks) {
             if (task.status !== "blocked" || task.blockedBy.length === 0) continue
 
+            // Check if ALL deps are completed (using fresh read)
             const allDepsCompleted = task.blockedBy.every((depId) => {
               const dep = freshTasks.find((t) => t.id === depId)
               return dep?.status === "completed"
@@ -366,7 +374,7 @@ async function runTeammateSession(
             if (task.owner && teamFile2) {
               const member = teamFile2.members.find((m) => m.name === task.owner)
               if (member && !isTeammateRunning(member.agentId)) {
-                await spawnTeammate({
+                spawnTeammate({
                   name: member.name,
                   teamName: config.teamName,
                   prompt: task.description,
@@ -374,12 +382,12 @@ async function runTeammateSession(
                   model: member.model,
                   description: task.description,
                   color: member.color,
-                })
+                }).catch((err) => console.error("[swarm:cascade] spawn failed:", err))
               }
             }
           }
-        } catch {
-          // cascade is best-effort — non-fatal
+        } catch (err) {
+          console.error("[swarm:cascade] cascade failed:", err)
         }
       } catch {
         // task board may not exist — non-fatal
