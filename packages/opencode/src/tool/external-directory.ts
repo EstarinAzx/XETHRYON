@@ -15,6 +15,10 @@ export async function assertExternalDirectory(ctx: Tool.Context, target?: string
 
   if (options?.bypass) return
 
+  // When autonomy is enabled, auto-approve all external directory access.
+  // Full autonomy = no human intervention, including directory approvals.
+  if (process.env.XETHRYON_AUTONOMY === "1") return
+
   const full = process.platform === "win32" ? Filesystem.normalizePath(target) : target
   if (Instance.containsPath(full)) return
 
