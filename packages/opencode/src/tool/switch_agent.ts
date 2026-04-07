@@ -17,20 +17,17 @@ const AGENT_ALIASES: Record<string, string> = {
   construct: "build",
   plan: "plan",
   architect: "plan",
-  explore: "explore",
   coordinator: "coordinator",
   coordinate: "coordinator",
-  verification: "verification",
-  validate: "verification",
 }
 
 const parameters = z.object({
   agent: z
     .string()
     .transform((val) => AGENT_ALIASES[val.toLowerCase()] ?? val)
-    .pipe(z.enum(["build", "plan", "explore", "coordinator", "verification"]))
+    .pipe(z.enum(["build", "plan", "coordinator"]))
     .describe(
-      "The agent mode to switch to. Accepts: build/construct (CONSTRUCT), plan/architect (ARCHITECT), explore (EXPLORE), coordinator/coordinate (COORDINATE), verification/validate (VALIDATE)",
+      "The agent mode to switch to. Accepts: build/construct (CONSTRUCT), plan/architect (ARCHITECT), coordinator/coordinate (COORDINATE)",
     ),
   reason: z.string().describe("Brief reason for switching modes").optional(),
 })
@@ -43,25 +40,19 @@ export const SwitchAgentTool = Tool.define("switch_agent", {
     "=== AGENT VALUES (use any of these) ===",
     "build OR construct → CONSTRUCT mode",
     "plan OR architect → ARCHITECT mode",
-    "explore → EXPLORE mode",
     "coordinator OR coordinate → COORDINATE mode",
-    "verification OR validate → VALIDATE mode",
     "",
     "=== MANDATORY TRIGGERS — switch IMMEDIATELY when you detect these ===",
     "→ User mentions 'subagent', 'sub-agent', 'team', 'spawn', 'summon', 'parallel agents', 'delegate to agents' → switch to coordinator",
     "→ User asks to 'plan', 'design', 'architect', 'break down', 'roadmap', 'strategy' → switch to architect",
-    "→ User asks to 'explore', 'find', 'search code', 'how does X work', 'understand' → switch to explore",
-    "→ User asks to 'test', 'verify', 'check', 'validate', 'review code' → switch to validate",
-    "→ User asks to 'build', 'implement', 'fix', 'create', 'code', 'write' → switch to construct",
+    "→ User asks to 'build', 'implement', 'fix', 'create', 'code', 'write', 'explore', 'find', 'test', 'verify' → switch to construct",
     "→ After finishing planning/architecture → switch to construct to execute",
     "→ After team work completes and only simple tasks remain → switch to construct",
     "",
     "=== MODE CAPABILITIES ===",
-    "CONSTRUCT (build) — Writing code, implementing features, fixing bugs, editing files, running commands.",
-    "ARCHITECT (plan) — Architecture decisions, multi-step planning, designing approaches. Cannot spawn teams.",
-    "EXPLORE (explore) — Reading/exploring code, understanding codebases, research. Read-only.",
+    "CONSTRUCT (build) — Full capability mode. Writing code, reading/exploring code, running commands, testing, verifying — everything.",
+    "ARCHITECT (plan) — Architecture decisions, multi-step planning, designing approaches. Cannot write files or spawn teams.",
     "COORDINATE (coordinator) — Spawning subagents, creating teams, delegating parallel tasks. The ONLY mode that should use team_create/send_message.",
-    "VALIDATE (verification) — Running tests, code review, verifying correctness.",
     "",
     "CRITICAL: Do NOT use team_create, send_message, or spawn subagents unless you are in COORDINATE mode. Switch first, then spawn.",
   ].join("\n"),
@@ -81,9 +72,7 @@ export const SwitchAgentTool = Tool.define("switch_agent", {
     const cyberNames: Record<string, string> = {
       build: "CONSTRUCT",
       plan: "ARCHITECT",
-      explore: "EXPLORE",
       coordinator: "COORDINATE",
-      verification: "VALIDATE",
     }
 
     const displayName = cyberNames[args.agent] ?? args.agent.toUpperCase()
