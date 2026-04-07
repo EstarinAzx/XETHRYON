@@ -496,19 +496,28 @@ async function runTeammateSession(
           const { Instance } = await import("../../project/instance.js")
           const mainCwd = Instance.worktree
 
-          // Merge the agent's branch into the current branch (no-edit = auto-commit)
+          // Prevent git from opening an editor on merge conflicts or commit messages
+          const mergeEnv = {
+            ...process.env,
+            GIT_EDITOR: "true",
+            GIT_MERGE_AUTOEDIT: "no",
+            GIT_TERMINAL_PROMPT: "0",
+          }
+
+          // Merge the agent's branch into the current branch
           execSync(`git merge "${mate.worktreeBranch}" --no-edit --no-ff -m "swarm: merge ${config.name} (${mate.worktreeBranch})"`, {
             cwd: mainCwd,
             stdio: "pipe",
-            timeout: 30_000,
+            timeout: 10_000,
+            env: mergeEnv,
           })
           console.log(`[xethryon:swarm] merged ${mate.worktreeBranch} into current branch for ${config.name}`)
         } catch (mergeErr: any) {
-          // Merge conflict — abort and keep the branch for manual resolution
+          // Merge conflict or timeout — abort and keep the branch for manual resolution
           try {
             const { execSync } = await import("child_process")
             const { Instance } = await import("../../project/instance.js")
-            execSync("git merge --abort", { cwd: Instance.worktree, stdio: "pipe" })
+            execSync("git merge --abort", { cwd: Instance.worktree, stdio: "pipe", timeout: 5_000 })
           } catch { /* already clean */ }
           console.error(`[xethryon:swarm] merge failed for ${config.name} — branch "${mate.worktreeBranch}" preserved for manual merge:`, mergeErr?.message ?? mergeErr)
         }
