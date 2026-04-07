@@ -2,7 +2,7 @@
   <img src="assets/xethryon_title.png" alt="Xethryon" />
 </p>
 
-A terminal-based AI coding agent. Fork of [OpenCode](https://opencode.ai) with selective features ported from Anthropic's [Claude Code](https://github.com/anthropics/claude-code) leak, plus custom additions for memory retrieval, self-reflection, git awareness, and autonomous skill invocation.
+A terminal-based AI coding agent. Fork of [OpenCode](https://opencode.ai) with selective features ported from Anthropic's [Claude Code](https://github.com/anthropics/claude-code) leak, plus custom additions for memory retrieval, self-reflection, git awareness, and autonomous multi-agent swarm orchestration.
 
 ---
 
@@ -32,17 +32,17 @@ Toggle with `XETHRYON_GIT_AWARE=0`.
 ![Git-aware context — agent knows branch, uncommitted changes, and remote status](assets/gitaware.png)
 
 ### Autonomy Mode (`F4`)
-When enabled, the agent operates with more initiative.
+When enabled, the agent operates with full initiative — no waiting, no asking, just execution.
 
 **Agent switching** — the agent reads task intent and pivots between modes automatically:
 
 ```
 "plan a refactor of the auth module"     → switches to ARCHITECT
-"explore how the payment system works"   → switches to EXPLORE
 "create a team to fix these 5 bugs"      → switches to COORDINATE
-"verify the test suite passes"           → switches to VALIDATE
 planning done, time to implement         → switches back to CONSTRUCT
 ```
+
+**Auto-approve permissions** — when autonomy is ON, external directory access and bash command permissions are granted automatically. No roadblocks, no prompts — full hands-off operation.
 
 **Skill invocation** — after completing code tasks, the agent considers invoking follow-up skills on its own:
 
@@ -56,19 +56,27 @@ This can chain: a single prompt can result in planning, implementation, verifica
 ![Autonomous skill invocation — agent self-invokes /onboard after detecting the task context](assets/self_invoke.png)
 
 ### Swarm Orchestration
-Parallel and sequential multi-agent workflows via isolated sub-sessions with file-based IPC and shared task boards.
+Parallel and sequential multi-agent workflows via isolated sub-sessions with file-based IPC and shared task boards. **Requires autonomy mode (`F4`) to be ON.**
 
-**Event-driven auto-inject** — when a teammate finishes a task, the server automatically injects a `[SWARM UPDATE]` message into the coordinator's session via `SessionPrompt.prompt()`. No polling, no manual nudging. The coordinator wakes up, reviews progress, and decides its next move — fully hands-off.
+**Event-driven cascade** — when a teammate finishes a task, the post-task pipeline in `spawn.ts` automatically:
+1. Marks the task as completed
+2. Injects a `[SWARM]` status message into the coordinator's session
+3. Checks if any blocked tasks now have all dependencies met
+4. Unblocks and auto-spawns the next agent immediately
 
-**Coffee-break pattern** — the coordinator deploys agents, goes idle, and gets woken up by the event system when tasks complete. Multiple completions within 3 seconds are batched into a single update.
+No polling, no `team_await`, no manual intervention. The swarm is fully reactive — task completion triggers the next task in the chain.
 
-**Dependency chains** — tasks can declare `blockedBy` dependencies. Blocked tasks stay `pending` until their prerequisites complete, then auto-spawn.
+**Injection labels** — swarm status updates and autonomy auto-continues are visually separated from user input in the TUI. They render with a distinct `❐ XETHRYON` label and `INJECTION` badge so you always know what's system-generated vs. what you typed.
+
+![Event-driven swarm cascade — scanner completes, reporter auto-spawns, injections show task progress](assets/swarm_prompt_injection.png)
+
+**Dependency chains** — tasks can declare `blockedBy` dependencies (by task ID or subject name). Blocked tasks stay `blocked` until their prerequisites complete, then auto-unblock and auto-spawn.
 
 **Live Dashboard** (`/swarm`) — real-time mission control overlay showing team name, agent statuses, task progress with dependency info, and a progress bar. Polls the filesystem every second.
 
 **Headless permissions** — swarm sub-sessions run with a permissive ruleset (read, write, edit, bash, external directories, etc.) so background agents never hang on approval prompts.
 
-Tools: `team_create`, `team_delete`, `send_message`, `task_create`, `task_get`, `task_update`, `task_list`, `task_stop`, `team_await`.
+Tools (autonomy-only): `team_create`, `team_delete`, `send_message`, `task_create`, `task_get`, `task_update`, `task_list`, `task_stop`, `team_await`.
 
 **Coordinator deploying tasks** — the COORDINATE agent creates a team, assigns tasks with dependencies, and begins monitoring:
 
@@ -92,17 +100,17 @@ Tools: `team_create`, `team_delete`, `send_message`, `task_create`, `task_get`, 
 
 ### Agent Modes
 
-Switch manually with `Tab` or let autonomy handle it.
+Three focused modes. Switch manually with `Tab` or let autonomy handle it via `switch_agent`.
 
 ![Agent mode identification and switching between CONSTRUCT and ARCHITECT](assets/autonomous_mode_switch_sample.png)
 
 | Mode | Codename | Purpose |
 |------|----------|---------|
-| Build | `CONSTRUCT` | Full-access code implementation |
-| Plan | `ARCHITECT` | Read-only architectural analysis |
-| Manage | `COORDINATE` | Multi-agent team orchestration |
-| Search | `EXPLORE` | Codebase exploration and research |
-| Review | `VALIDATE` | Test validation and code review |
+| Build | `CONSTRUCT` | Full-access — code, explore, test, verify, bash. The all-purpose mode. |
+| Plan | `ARCHITECT` | Read-only architectural analysis and multi-step planning. |
+| Manage | `COORDINATE` | Multi-agent swarm orchestration. Autonomy-only. |
+
+> **Note:** EXPLORE and VALIDATE modes have been retired. CONSTRUCT handles all read, write, test, and verify operations in a single mode.
 
 ### Provider Support
 Bring your own keys. Works with Anthropic, OpenAI, Google, OpenRouter, MiniMax, and local models.
@@ -178,7 +186,7 @@ GOOGLE_GENERATIVE_AI_API_KEY=...
 |----------|---------|-------------|
 | `XETHRYON_REFLECTION` | `1` | Self-reflection before presenting code |
 | `XETHRYON_GIT_AWARE` | `1` | Git state injection into context |
-| `XETHRYON_AUTONOMY` | `0` | Autonomous mode (also `F4`) |
+| `XETHRYON_AUTONOMY` | `0` | Autonomous mode — agent switching, auto-approve, swarm access (also `F4`) |
 | `XETHRYON_DEBUG` | `false` | Debug logging for internals |
 
 ---
@@ -213,6 +221,7 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 │                TUI Thread                     │
 │  Input → Command Parsing → Slash Skills       │
 │  Theme → Render → Agent Switcher (Tab/F4)     │
+│  Injection Labels (❐ XETHRYON / INJECTION)    │
 └─────────────────┬────────────────────────────┘
                   │ BroadcastChannel
 ┌─────────────────▼────────────────────────────┐
@@ -228,8 +237,11 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 │                    ↓                          │
 │         Memory Post-Turn Hook (extract/store)  │
 │                    ↓                          │
-│     Swarm Orchestration                        │
+│     Swarm Orchestration (autonomy-only)        │
 │       ├─ spawn.ts → sub-sessions (headless)    │
+│       ├─ Post-task pipeline:                   │
+│       │    mark completed → emit injection     │
+│       │    → cascade unblock → auto-spawn      │
 │       ├─ events.ts → task completion emitter   │
 │       ├─ debounce (3s) → batch completions     │
 │       └─ SessionPrompt.prompt() → auto-inject  │
@@ -247,12 +259,14 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 | Memory Persistence + AutoDream | Claude Code (ported) |
 | Bundled Skills System | Claude Code (ported) |
 | Swarm Orchestration | Claude Code (ported) |
-| Event-Driven Auto-Inject | Original (inspired by opencode-ensemble) |
+| Event-Driven Cascade + Auto-Inject | Original |
+| Injection Labels (❐ XETHRYON) | Original |
 | Live Swarm Dashboard | Original |
 | Cross-Session Memory Retrieval | Original |
 | Self-Reflection Loop | Original |
 | Git-Aware Context | Original |
 | Autonomous Skill Invocation | Original |
+| Autonomy Auto-Approve | Original |
 | Agent Mode Switching | Hybrid |
 | Cyberpunk Theme | Original |
 
@@ -262,4 +276,4 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 
 - Terminal interface and session management from [OpenCode](https://github.com/anomalyco/opencode) by Anomaly.
 - Memory and context loop patterns from Anthropic's [Claude Code](https://github.com/anthropics/claude-code).
-- Memory retrieval, self-reflection, git-awareness, autonomous skills, and visual identity by [@EstarinAzx](https://github.com/EstarinAzx).
+- Memory retrieval, self-reflection, git-awareness, autonomous skills, swarm cascade, and visual identity by [@EstarinAzx](https://github.com/EstarinAzx).
