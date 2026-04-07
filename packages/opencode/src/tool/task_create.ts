@@ -48,25 +48,45 @@ export const TaskCreateTool = Tool.define("task_create", {
       const allTasks = await swarm.listTasks(params.team_name)
       resolvedBlockers = params.blocked_by
         .map((ref) => {
-          // Direct ID match
+          const refLower = ref.toLowerCase().trim()
+
+          // 1. Direct ID match (exact)
           const byId = allTasks.find((t) => t.id === ref)
           if (byId) return byId.id
 
-          // Subject match (case-insensitive, partial)
-          const bySubject = allTasks.find(
-            (t) =>
-              t.subject.toLowerCase() === ref.toLowerCase() ||
-              t.subject.toLowerCase().includes(ref.toLowerCase()),
+          // 2. Exact subject match (case-insensitive)
+          const byExactSubject = allTasks.find(
+            (t) => t.subject.toLowerCase() === refLower,
           )
-          if (bySubject) return bySubject.id
+          if (byExactSubject) return byExactSubject.id
 
-          // Owner match — find most recent task owned by this name
+          // 3. Scored partial subject match — ref must cover ≥50% of subject
+          //    to avoid greedy matches like "haikus" matching the wrong task.
+          //    Pick the best (highest overlap) match.
+          const candidates = allTasks
+            .filter((t) => {
+              const subjectLower = t.subject.toLowerCase()
+              return subjectLower.includes(refLower) || refLower.includes(subjectLower)
+            })
+            .map((t) => {
+              const subjectLower = t.subject.toLowerCase()
+              // Score = overlap ratio (how much of the longer string is covered)
+              const longer = Math.max(refLower.length, subjectLower.length)
+              const shorter = Math.min(refLower.length, subjectLower.length)
+              return { task: t, score: shorter / longer }
+            })
+            .filter((c) => c.score >= 0.5) // Must cover at least 50%
+            .sort((a, b) => b.score - a.score) // Best match first
+
+          if (candidates.length > 0) return candidates[0].task.id
+
+          // 4. Exact owner match — find most recent task owned by this name
           const byOwner = allTasks
-            .filter((t) => t.owner?.toLowerCase() === ref.toLowerCase())
+            .filter((t) => t.owner?.toLowerCase() === refLower)
             .sort((a, b) => b.createdAt - a.createdAt)
           if (byOwner.length > 0) return byOwner[0].id
 
-          // Fall through — use raw ref
+          // 5. Fall through — use raw ref (could be a future task ID)
           return ref
         })
         .filter(Boolean)
