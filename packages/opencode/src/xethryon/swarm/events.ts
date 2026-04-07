@@ -94,8 +94,6 @@ async function injectIntoCoordinator(sessionId: string, text: string): Promise<v
     const { SessionPrompt } = await import("../../session/prompt.js")
     const { MessageID } = await import("../../session/schema.js")
 
-    console.error(`[swarm:inject] injecting into session ${sessionId}`)
-
     // Fire-and-forget: prompt() creates a user message and runs the loop
     SessionPrompt.prompt({
       sessionID: sessionId as any,
