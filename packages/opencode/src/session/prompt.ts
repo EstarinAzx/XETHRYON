@@ -1670,68 +1670,61 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 yield* InstanceState.withALS(() => instruction.clear(handle.message.id)).pipe(Effect.flatMap((x) => x))
               }),
             )
-            if (outcome === "break") break
+            if (outcome === "break") {
+              // Flush conversation to daily log when session turn ends
+              if (_lastModel && _lastAgent && _lastUser2) {
+                const flushMsgs = yield* sessions.messages({ sessionID })
+                setTimeout(async () => {
+                  try {
+                    const { appendToDailyLog } = await import("@/xethryon/memory/compiler.js")
+                    const userMsgs = flushMsgs
+                      .filter(m => m.info.role === "user")
+                      .map(m => {
+                        const text = m.parts
+                          .filter(p => p.type === "text")
+                          .map(p => ("value" in p ? String(p.value) : ""))
+                          .join(" ")
+                        return text.slice(0, 500)
+                      })
+                      .filter(t => t.length > 10)
+
+                    const assistantParts = flushMsgs
+                      .filter(m => m.info.role === "assistant")
+                      .flatMap(m => m.parts)
+
+                    const toolCalls = assistantParts
+                      .filter(p => p.type === "tool")
+                      .map(p => ("name" in p ? String(p.name) : "tool"))
+
+                    const textResponses = assistantParts
+                      .filter(p => p.type === "text")
+                      .map(p => ("value" in p ? String(p.value).slice(0, 300) : ""))
+                      .filter(t => t.length > 20)
+
+                    if (userMsgs.length === 0) return
+
+                    const entry = [
+                      `**Context:** ${userMsgs[0]}`,
+                      "",
+                      userMsgs.length > 1 ? `**Follow-up requests:**\n${userMsgs.slice(1).map(m => `- ${m}`).join("\n")}` : "",
+                      "",
+                      toolCalls.length > 0 ? `**Tools used:** ${[...new Set(toolCalls)].join(", ")}` : "",
+                      "",
+                      textResponses.length > 0 ? `**Key responses:**\n${textResponses.slice(0, 3).map(t => `- ${t}`).join("\n")}` : "",
+                    ].filter(l => l.trim()).join("\n")
+
+                    await appendToDailyLog(entry, "Auto-Flush")
+                  } catch (e) {
+                    // Silently fail — daily log flush is best-effort
+                  }
+                }, 50)
+              }
+              break
+            }
             continue
           }
 
           yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-
-          // Fire Xethryon memory post-turn hook — direct flush to daily log
-          if (_lastModel && _lastAgent && _lastUser2) {
-            const memoryMsgs = yield* sessions.messages({ sessionID })
-            // Direct flush: dump conversation summary to daily log (no LLM needed)
-            // The compiler (autoDream) will synthesize into wiki articles later
-            setTimeout(async () => {
-              try {
-                const { appendToDailyLog } = await import("@/xethryon/memory/compiler.js")
-                // Build a structured summary from the raw messages
-                const userMsgs = memoryMsgs
-                  .filter(m => m.info.role === "user")
-                  .map(m => {
-                    const text = m.parts
-                      .filter(p => p.type === "text")
-                      .map(p => ("value" in p ? String(p.value) : ""))
-                      .join(" ")
-                    return text.slice(0, 500)
-                  })
-                  .filter(t => t.length > 10)
-
-                const assistantParts = memoryMsgs
-                  .filter(m => m.info.role === "assistant")
-                  .flatMap(m => m.parts)
-
-                const toolCalls = assistantParts
-                  .filter(p => p.type === "tool")
-                  .map(p => ("name" in p ? String(p.name) : "tool"))
-
-                const textResponses = assistantParts
-                  .filter(p => p.type === "text")
-                  .map(p => ("value" in p ? String(p.value).slice(0, 300) : ""))
-                  .filter(t => t.length > 20)
-
-                if (userMsgs.length === 0) return
-
-                const entry = [
-                  `**Context:** ${userMsgs[0]}`,
-                  "",
-                  userMsgs.length > 1 ? `**Follow-up requests:**\n${userMsgs.slice(1).map(m => `- ${m}`).join("\n")}` : "",
-                  "",
-                  toolCalls.length > 0 ? `**Tools used:** ${[...new Set(toolCalls)].join(", ")}` : "",
-                  "",
-                  textResponses.length > 0 ? `**Key responses:**\n${textResponses.slice(0, 3).map(t => `- ${t}`).join("\n")}` : "",
-                ].filter(l => l.trim()).join("\n")
-
-                await appendToDailyLog(entry, "Auto-Flush")
-                log.info("daily log flushed from session", {
-                  sessionID,
-                  userMsgs: userMsgs.length,
-                  toolCalls: toolCalls.length,
-                })
-              } catch (e) {
-                log.error("daily log flush failed", { error: e })
-              }
-            }, 100)
-          }
 
           return yield* lastAssistant(sessionID)
         },
