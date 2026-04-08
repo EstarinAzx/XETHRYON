@@ -185,7 +185,8 @@ export function buildSearchingPastContextSection(autoMemDir: string): string[] {
 }
 
 /**
- * Build the typed-memory prompt with MEMORY.md content included.
+ * Build the typed-memory prompt with knowledge index content included.
+ * Reads knowledge/index.md first (compiled wiki), falls back to MEMORY.md.
  */
 export function buildMemoryPrompt(params: {
   displayName: string
@@ -194,19 +195,36 @@ export function buildMemoryPrompt(params: {
 }): string {
   const { displayName, memoryDir, extraGuidelines } = params
   const entrypoint = join(memoryDir, ENTRYPOINT_NAME)
+  const knowledgeIndex = join(memoryDir, "knowledge", "index.md")
 
-  let entrypointContent = ""
+  // Try knowledge/index.md first (compiled wiki), fallback to MEMORY.md
+  let indexContent = ""
+  let sourceLabel = ENTRYPOINT_NAME
+
   try {
-    entrypointContent = readFileSync(entrypoint, { encoding: "utf-8" })
+    indexContent = readFileSync(knowledgeIndex, { encoding: "utf-8" })
+    sourceLabel = "Knowledge Index"
   } catch {
-    // No memory file yet
+    try {
+      indexContent = readFileSync(entrypoint, { encoding: "utf-8" })
+    } catch {
+      // No memory file yet
+    }
   }
 
   const lines = buildMemoryLines(displayName, memoryDir, extraGuidelines)
 
-  if (entrypointContent.trim()) {
-    const t = truncateEntrypointContent(entrypointContent)
-    lines.push(`## ${ENTRYPOINT_NAME}`, "", t.content)
+  // Add knowledge base section
+  if (indexContent.trim()) {
+    const t = truncateEntrypointContent(indexContent)
+    lines.push(
+      `## ${sourceLabel}`,
+      "",
+      "This is your compiled knowledge base index. Each entry links to a detailed concept article.",
+      "When you need details on a concept, read the linked article file from the knowledge/ directory.",
+      "",
+      t.content,
+    )
   } else {
     lines.push(
       `## ${ENTRYPOINT_NAME}`,
@@ -214,6 +232,19 @@ export function buildMemoryPrompt(params: {
       `Your ${ENTRYPOINT_NAME} is currently empty. When you save new memories, they will appear here.`,
     )
   }
+
+  // Add knowledge base locations
+  lines.push(
+    "",
+    "## Knowledge Base Structure",
+    "",
+    `- **Daily logs**: \`${join(memoryDir, "daily")}/\` — raw conversation extracts`,
+    `- **Concepts**: \`${join(memoryDir, "knowledge", "concepts")}/\` — compiled knowledge articles`,
+    `- **Connections**: \`${join(memoryDir, "knowledge", "connections")}/\` — cross-cutting insights`,
+    `- **Q&A**: \`${join(memoryDir, "knowledge", "qa")}/\` — filed query answers`,
+    "",
+    "Articles use `[[wikilinks]]` for cross-references. The knowledge base is Obsidian-compatible.",
+  )
 
   return lines.join("\n")
 }
@@ -228,8 +259,17 @@ export async function loadMemoryPrompt(): Promise<string | null> {
   const autoDir = getAutoMemPath()
   await ensureMemoryDirExists(autoDir)
 
+  // Ensure knowledge directories exist
+  try {
+    const { ensureKnowledgeDirs } = await import("./compiler.js")
+    await ensureKnowledgeDirs()
+  } catch {
+    // Non-critical — dirs will be created on first compile
+  }
+
   return buildMemoryPrompt({
     displayName: "Xethryon Memory",
     memoryDir: autoDir,
   })
 }
+

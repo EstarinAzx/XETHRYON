@@ -108,3 +108,38 @@ export {
 export {
   retrieveRelevantMemories,
 } from "./retrieveMemories.js"
+
+// --- Knowledge Compiler (daily logs → wiki articles) ---
+export {
+  runCompilation,
+  appendToDailyLog,
+  ensureKnowledgeDirs,
+} from "./compiler.js"
+export {
+  loadCompilerState,
+  saveCompilerState,
+  fileHash,
+  needsCompilation,
+  recordCompilation,
+} from "./compilerState.js"
+
+// --- Knowledge Base Lint ---
+export {
+  runStructuralLint,
+  formatLintReport,
+  type LintIssue,
+  type LintSeverity,
+} from "./lint.js"
+
+// --- Knowledge Base Paths ---
+export {
+  getDailyLogDir,
+  getKnowledgeDir,
+  getConceptsDir,
+  getConnectionsDir,
+  getQADir,
+  getKnowledgeIndexPath,
+  getKnowledgeBuildLogPath,
+  getCompilerStatePath,
+} from "./paths.js"
+

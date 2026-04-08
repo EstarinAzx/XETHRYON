@@ -132,21 +132,44 @@ export async function executeAutoDream(
   try {
     const memoryRoot = getAutoMemPath()
 
-    // Build consolidation prompt
-    const extra = `
-**Tool constraints for this run:** Bash is restricted to read-only commands (\`ls\`, \`find\`, \`grep\`, \`cat\`, \`stat\`, \`wc\`, \`head\`, \`tail\`, and similar). Anything that writes, redirects to a file, or modifies state will be denied.
-
-Recent memory activity: ${recentChanges} files modified since last consolidation.`
-
-    const prompt = buildConsolidationPrompt(memoryRoot, memoryRoot, extra)
-
     if (llmCall) {
-      // Phase 3: Call the LLM to perform consolidation
-      log.info("autoDream executing LLM consolidation", {
+      // ─── Step 1: Compile daily logs → knowledge articles ───
+      log.info("autoDream: running knowledge compilation", { sessionID })
+      try {
+        const { runCompilation } = await import("./compiler.js")
+        const compileResult = await runCompilation(llmCall)
+        log.info("autoDream: compilation complete", {
+          compiled: compileResult.compiled,
+          created: compileResult.articlesCreated.length,
+          updated: compileResult.articlesUpdated.length,
+        })
+      } catch (e) {
+        log.error("autoDream: compilation failed (continuing)", { error: e })
+      }
+
+      // ─── Step 2: Run structural lint (free, no LLM) ───
+      try {
+        const { runStructuralLint, formatLintReport } = await import("./lint.js")
+        const issues = await runStructuralLint()
+        if (issues.length > 0) {
+          log.info("autoDream: lint report", { report: formatLintReport(issues) })
+        }
+      } catch (e) {
+        log.error("autoDream: lint failed (continuing)", { error: e })
+      }
+
+      // ─── Step 3: Memory consolidation (existing behavior) ───
+      log.info("autoDream: executing LLM consolidation", {
         sessionID,
         memoryRoot,
       })
 
+      const extra = `
+**Tool constraints for this run:** Bash is restricted to read-only commands (\`ls\`, \`find\`, \`grep\`, \`cat\`, \`stat\`, \`wc\`, \`head\`, \`tail\`, and similar). Anything that writes, redirects to a file, or modifies state will be denied.
+
+Recent memory activity: ${recentChanges} files modified since last consolidation.`
+
+      const prompt = buildConsolidationPrompt(memoryRoot, memoryRoot, extra)
       const response = await llmCall(prompt)
 
       // Record successful consolidation
@@ -162,7 +185,6 @@ Recent memory activity: ${recentChanges} files modified since last consolidation
       log.info("autoDream prompt built — pending /dream execution", {
         sessionID,
         memoryRoot,
-        promptLength: prompt.length,
       })
     }
   } catch (e) {

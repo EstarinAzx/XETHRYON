@@ -137,13 +137,72 @@ export function getAutoMemEntrypoint(): string {
 
 /**
  * Returns the daily log file path for the given date (defaults to today).
- * Shape: {autoMemPath}/logs/YYYY/MM/YYYY-MM-DD.md
+ * Shape: {autoMemPath}/daily/YYYY-MM-DD.md
  */
 export function getAutoMemDailyLogPath(date: Date = new Date()): string {
   const yyyy = date.getFullYear().toString()
   const mm = (date.getMonth() + 1).toString().padStart(2, "0")
   const dd = date.getDate().toString().padStart(2, "0")
-  return join(getAutoMemPath(), "logs", yyyy, mm, `${yyyy}-${mm}-${dd}.md`)
+  return join(getAutoMemPath(), "daily", `${yyyy}-${mm}-${dd}.md`)
+}
+
+/**
+ * Returns the daily/ log directory path.
+ */
+export function getDailyLogDir(): string {
+  return join(getAutoMemPath(), "daily")
+}
+
+// ─── Knowledge Base Paths ──────────────────────────────────────────
+
+/**
+ * Returns the knowledge/ base directory.
+ * Shape: {autoMemPath}/knowledge/
+ */
+export function getKnowledgeDir(): string {
+  return join(getAutoMemPath(), "knowledge")
+}
+
+/**
+ * Returns the knowledge/concepts/ directory.
+ */
+export function getConceptsDir(): string {
+  return join(getKnowledgeDir(), "concepts")
+}
+
+/**
+ * Returns the knowledge/connections/ directory.
+ */
+export function getConnectionsDir(): string {
+  return join(getKnowledgeDir(), "connections")
+}
+
+/**
+ * Returns the knowledge/qa/ directory.
+ */
+export function getQADir(): string {
+  return join(getKnowledgeDir(), "qa")
+}
+
+/**
+ * Returns the knowledge/index.md path — the master catalog.
+ */
+export function getKnowledgeIndexPath(): string {
+  return join(getKnowledgeDir(), "index.md")
+}
+
+/**
+ * Returns the knowledge/log.md path — the append-only build log.
+ */
+export function getKnowledgeBuildLogPath(): string {
+  return join(getKnowledgeDir(), "log.md")
+}
+
+/**
+ * Returns the compiler state file path.
+ */
+export function getCompilerStatePath(): string {
+  return join(getKnowledgeDir(), ".state.json")
 }
 
 /**
@@ -160,3 +219,4 @@ export function isAutoMemPath(absolutePath: string): boolean {
 export function _resetAutoMemPath(): void {
   _cachedAutoMemPath = undefined
 }
+
