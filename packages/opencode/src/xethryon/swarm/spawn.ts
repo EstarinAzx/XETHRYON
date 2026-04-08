@@ -164,7 +164,8 @@ async function runTeammateSession(
 
     try {
       const { Instance } = await import("../../project/instance.js")
-      const cwd = Instance.worktree
+      // Use directory (not worktree which is "/" for non-git projects)
+      const cwd = Instance.directory
 
       // Check git directly (not cached vcs) so auto-init from team_create is picked up
       const gitCheck = Bun.spawnSync(["git", "rev-parse", "--is-inside-work-tree"], { cwd })

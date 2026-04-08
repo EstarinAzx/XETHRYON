@@ -39,12 +39,15 @@ export const TeamCreateTool = Tool.define("team_create", {
     try {
       const { Instance } = await import("../project/instance.js")
       if (Instance.project.vcs !== "git") {
-        const cwd = Instance.worktree
+        // Instance.worktree is "/" for non-git projects, use Instance.directory instead
+        const cwd = Instance.directory
         const check = Bun.spawnSync(["git", "rev-parse", "--is-inside-work-tree"], { cwd })
         if (check.exitCode !== 0) {
           Bun.spawnSync(["git", "init"], { cwd })
           Bun.spawnSync(["git", "add", "-A"], { cwd })
-          Bun.spawnSync(["git", "commit", "-m", "xethryon: initial commit"], { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } })
+          Bun.spawnSync(["git", "commit", "--allow-empty", "-m", "xethryon: initial commit"], { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } })
+          // Reload the Instance so cached project.vcs updates to "git"
+          await Instance.reload({ directory: cwd })
         }
       }
     } catch { /* non-fatal — worktree isolation will fall back to shared dir */ }
