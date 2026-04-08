@@ -33,6 +33,22 @@ export const TeamCreateTool = Tool.define("team_create", {
   async execute(params, ctx) {
     const swarm = await import("../xethryon/swarm/index.js")
 
+    // ─── Git Auto-Init ──────────────────────────────────────────────
+    // Worktree isolation requires git. If no VCS is detected, auto-init
+    // so parallel agents always get their own branch + directory.
+    try {
+      const { Instance } = await import("../project/instance.js")
+      if (Instance.project.vcs !== "git") {
+        const cwd = Instance.worktree
+        const check = Bun.spawnSync(["git", "rev-parse", "--is-inside-work-tree"], { cwd })
+        if (check.exitCode !== 0) {
+          Bun.spawnSync(["git", "init"], { cwd })
+          Bun.spawnSync(["git", "add", "-A"], { cwd })
+          Bun.spawnSync(["git", "commit", "-m", "xethryon: initial commit"], { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } })
+        }
+      }
+    } catch { /* non-fatal — worktree isolation will fall back to shared dir */ }
+
     // Generate a unique team name
     const teamName = swarm.generateUniqueTeamName(params.team_name)
     const leadAgentId = swarm.formatAgentId("team-lead", teamName)

@@ -164,7 +164,9 @@ async function runTeammateSession(
 
     try {
       const { Instance } = await import("../../project/instance.js")
-      if (Instance.project.vcs === "git") {
+      // Check git directly (not cached vcs) so auto-init from team_create is picked up
+      const gitCheck = Bun.spawnSync(["git", "rev-parse", "--is-inside-work-tree"], { cwd: Instance.worktree })
+      if (gitCheck.exitCode === 0) {
         const { Worktree } = await import("../../worktree/index.js")
         const worktreeName = `swarm-${sanitizeName(config.teamName)}-${sanitizeName(config.name)}`
         const worktreeInfo = await Worktree.create({ name: worktreeName })
