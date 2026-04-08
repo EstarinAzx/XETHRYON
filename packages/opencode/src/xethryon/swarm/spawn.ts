@@ -164,33 +164,48 @@ async function runTeammateSession(
 
     try {
       const { Instance } = await import("../../project/instance.js")
+      const cwd = Instance.worktree
+
       // Check git directly (not cached vcs) so auto-init from team_create is picked up
-      const gitCheck = Bun.spawnSync(["git", "rev-parse", "--is-inside-work-tree"], { cwd: Instance.worktree })
+      const gitCheck = Bun.spawnSync(["git", "rev-parse", "--is-inside-work-tree"], { cwd })
       if (gitCheck.exitCode === 0) {
-        const { Worktree } = await import("../../worktree/index.js")
+        const path = await import("path")
+        const os = await import("os")
+        const fsp = await import("fs/promises")
         const worktreeName = `swarm-${sanitizeName(config.teamName)}-${sanitizeName(config.name)}`
-        const worktreeInfo = await Worktree.create({ name: worktreeName })
-        worktreeDir = worktreeInfo.directory
-        worktreeBranch = worktreeInfo.branch
+        const worktreeRoot = path.join(os.tmpdir(), "opencode-worktrees", Instance.project.id)
+        await fsp.mkdir(worktreeRoot, { recursive: true })
+        const wtDir = path.join(worktreeRoot, worktreeName)
+        const wtBranch = `opencode/${worktreeName}`
 
+        // Create the worktree + branch directly
+        const result = Bun.spawnSync(
+          ["git", "worktree", "add", "--no-checkout", "-b", wtBranch, wtDir],
+          { cwd },
+        )
+        if (result.exitCode === 0) {
+          // Populate the worktree with current HEAD content
+          Bun.spawnSync(["git", "reset", "--hard"], { cwd: wtDir })
+          worktreeDir = wtDir
+          worktreeBranch = wtBranch
 
-        // Create workspace to bind the session to the worktree directory
-        try {
-          const { Workspace } = await import("../../control-plane/workspace.js")
-          const ws = await Workspace.create({
-            type: "worktree",
-            branch: worktreeBranch,
-            projectID: Instance.project.id,
-            extra: null,
-          })
-          workspaceId = ws.id
-
-        } catch (wsErr) {
-
+          // Create workspace to bind the session to the worktree directory
+          try {
+            const { Workspace } = await import("../../control-plane/workspace.js")
+            const ws = await Workspace.create({
+              type: "worktree",
+              branch: worktreeBranch,
+              projectID: Instance.project.id,
+              extra: null,
+            })
+            workspaceId = ws.id
+          } catch {
+            // workspace binding failed — agent will use prompt-based CWD
+          }
         }
       }
-    } catch (wtErr) {
-
+    } catch {
+      // worktree creation failed — agent runs in shared directory
     }
 
     // Store worktree info in runtime state
@@ -554,12 +569,15 @@ async function runTeammateSession(
       // Step 3: Remove worktree directory (branch stays if merge failed)
       try {
         if (mate.worktreeDir) {
-          const { Worktree } = await import("../../worktree/index.js")
-          await Worktree.remove({ directory: mate.worktreeDir })
-
+          const { Instance } = await import("../../project/instance.js")
+          // Remove worktree via git directly (bypasses cached VCS check)
+          Bun.spawnSync(["git", "worktree", "remove", "--force", mate.worktreeDir], { cwd: Instance.worktree })
+          // Clean up the directory if git didn't remove it
+          const fsp = await import("fs/promises")
+          await fsp.rm(mate.worktreeDir, { recursive: true, force: true }).catch(() => {})
         }
-      } catch (e) {
-
+      } catch {
+        // cleanup failed — non-fatal
       }
     }
     unregisterTeammate(agentId)
