@@ -51,6 +51,40 @@ export const TeamCreateTool = Tool.define("team_create", {
       }
     } catch { /* non-fatal — worktree isolation will fall back to shared dir */ }
 
+    // ─── Worktree Prune ──────────────────────────────────────────────
+    // Clean up stale worktrees from previous runs to prevent disk bloat
+    // and avoid branch-name collisions on repeated team creation.
+    // Safe policy: only prune git-reported stale refs + dirs older than 24h.
+    try {
+      const { Instance } = await import("../project/instance.js")
+      const cwd = Instance.directory
+      // Let git clean its own stale worktree references
+      Bun.spawnSync(["git", "worktree", "prune"], { cwd })
+
+      // Clean orphaned worktree dirs from tmpdir (older than 24h)
+      const os = await import("os")
+      const path = await import("path")
+      const fsp = await import("fs/promises")
+      const worktreeRoot = path.join(os.tmpdir(), "opencode-worktrees", Instance.project.id)
+      try {
+        const entries = await fsp.readdir(worktreeRoot, { withFileTypes: true })
+        const now = Date.now()
+        const MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24 hours
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue
+          const dirPath = path.join(worktreeRoot, entry.name)
+          try {
+            const stat = await fsp.stat(dirPath)
+            if (now - stat.mtimeMs > MAX_AGE_MS) {
+              // Force-remove from git first, then delete dir
+              Bun.spawnSync(["git", "worktree", "remove", "--force", dirPath], { cwd })
+              await fsp.rm(dirPath, { recursive: true, force: true })
+            }
+          } catch { /* stat/remove failed — skip */ }
+        }
+      } catch { /* worktreeRoot doesn't exist yet — nothing to prune */ }
+    } catch { /* prune failed — non-fatal */ }
+
     // Generate a unique team name
     const teamName = swarm.generateUniqueTeamName(params.team_name)
     const leadAgentId = swarm.formatAgentId("team-lead", teamName)

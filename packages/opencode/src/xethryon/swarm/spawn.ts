@@ -503,15 +503,18 @@ async function runTeammateSession(
   } finally {
     // ─── Worktree Merge + Cleanup ─────────────────────────────────
     // 1. Merge the agent's branch back into the current branch
-    // 2. Remove the workspace binding
-    // 3. Remove the git worktree + branch
+    // 2. Send merge telemetry to coordinator
+    // 3. Remove the workspace binding
+    // 4. Remove the git worktree + branch
     const mate = getTeammate(agentId)
+    let mergeStatus: "merged" | "conflict" | "empty" | "error" | "skipped" = "skipped"
+
     if (mate?.worktreeDir || mate?.workspaceId) {
       // Step 1: Auto-merge the agent's branch back into the parent branch
       if (mate.worktreeBranch && mate.worktreeDir) {
         try {
           const { Instance } = await import("../../project/instance.js")
-          const mainCwd = Instance.worktree
+          const mainCwd = Instance.directory
           const branch = mate.worktreeBranch
 
           // Use Bun.spawnSync to avoid cmd.exe hanging on Windows
@@ -532,47 +535,73 @@ async function runTeammateSession(
           if (dryRun.exitCode !== 0) {
             // Conflict detected — abort and preserve branch
             Bun.spawnSync(["git", "merge", "--abort"], { cwd: mainCwd })
-
+            mergeStatus = "conflict"
           } else {
             // No conflict — commit the merge
             const commitResult = Bun.spawnSync(["git", "commit", "--no-edit", "-m", `swarm: merge ${config.name} (${branch})`], {
               cwd: mainCwd,
               env: mergeEnv,
             })
-            if (commitResult.exitCode === 0) {
-
-            } else {
-              // Nothing to commit (empty merge) — that's fine
-
-            }
+            mergeStatus = commitResult.exitCode === 0 ? "merged" : "empty"
           }
         } catch (mergeErr: any) {
           // Unexpected error — try to abort any in-progress merge
           try {
             const { Instance } = await import("../../project/instance.js")
-            Bun.spawnSync(["git", "merge", "--abort"], { cwd: Instance.worktree })
+            Bun.spawnSync(["git", "merge", "--abort"], { cwd: Instance.directory })
           } catch { /* already clean */ }
-
+          mergeStatus = "error"
         }
       }
 
-      // Step 2: Remove workspace binding
+      // Step 2: Send merge telemetry to coordinator via mailbox
+      try {
+        const { readTeamFileAsync } = await import("./team.js")
+        const teamFile = await readTeamFileAsync(config.teamName)
+        if (teamFile?.leadSessionId) {
+          const statusMessages: Record<string, string> = {
+            merged: `✓ ${config.name}: merged cleanly into main branch`,
+            conflict: `⚠ ${config.name}: merge conflict — branch "${mate.worktreeBranch}" preserved for manual merge`,
+            empty: `○ ${config.name}: no changes to merge (branch was empty)`,
+            error: `✗ ${config.name}: merge failed — branch "${mate.worktreeBranch}" preserved`,
+            skipped: `- ${config.name}: no worktree (git isolation was not active)`,
+          }
+          await writeToMailbox(
+            TEAM_LEAD_NAME,
+            {
+              from: "swarm-system",
+              text: JSON.stringify({
+                type: "merge_telemetry",
+                agent: config.name,
+                branch: mate.worktreeBranch ?? null,
+                status: mergeStatus,
+              }),
+              summary: statusMessages[mergeStatus] ?? `${config.name}: merge status unknown`,
+              timestamp: Date.now(),
+            },
+            config.teamName,
+          )
+        }
+      } catch {
+        // telemetry delivery failed — non-fatal
+      }
+
+      // Step 3: Remove workspace binding
       try {
         if (mate.workspaceId) {
           const { Workspace } = await import("../../control-plane/workspace.js")
           await Workspace.remove(mate.workspaceId as any)
-
         }
-      } catch (e) {
-
+      } catch {
+        // workspace cleanup failed — non-fatal
       }
 
-      // Step 3: Remove worktree directory (branch stays if merge failed)
+      // Step 4: Remove worktree directory (branch stays if merge failed)
       try {
         if (mate.worktreeDir) {
           const { Instance } = await import("../../project/instance.js")
           // Remove worktree via git directly (bypasses cached VCS check)
-          Bun.spawnSync(["git", "worktree", "remove", "--force", mate.worktreeDir], { cwd: Instance.worktree })
+          Bun.spawnSync(["git", "worktree", "remove", "--force", mate.worktreeDir], { cwd: Instance.directory })
           // Clean up the directory if git didn't remove it
           const fsp = await import("fs/promises")
           await fsp.rm(mate.worktreeDir, { recursive: true, force: true }).catch(() => {})
