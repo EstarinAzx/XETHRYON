@@ -1,7 +1,11 @@
 /**
  * Swarm tool: team-await
  *
- * v2: 5-phase orchestration pipeline:
+ * Blocks internally until all agents are done (or timeout).
+ * Returns ONCE with full status + auto-healing.
+ * This eliminates the coordinator's polling loop that wastes tokens.
+ *
+ * Internal pipeline per poll cycle:
  * 1. Auto-reconcile stale in_progress/verifying tasks
  * 2. Auto-retry transient failures (once)
  * 3. Auto-unblock tasks whose deps are completed
@@ -13,24 +17,25 @@
 import z from "zod"
 import { Tool } from "./tool"
 
-const DEFAULT_TIMEOUT = 60
+const DEFAULT_TASK_TIMEOUT = 60
+const POLL_INTERVAL_MS = 5_000 // Check every 5s
+const MAX_WAIT_MS = 300_000   // 5 minute max
 
 const parameters = z.object({
-  team_name: z.string().describe("Team name to check on"),
-  wait_seconds: z
+  team_name: z.string().describe("Team name to wait on"),
+  max_wait_seconds: z
     .number()
     .int()
     .positive()
     .optional()
-    .describe("Seconds to wait before checking (default: 15). Set based on expected task complexity."),
+    .describe("Maximum seconds to wait for all agents (default: 300). Tool blocks internally — do NOT call in a loop."),
 })
 
 export const TeamAwaitTool = Tool.define("team_await", {
   description:
-    "Take a short break, then check on a team's task board. " +
-    "Returns the current status of all tasks and agents with auto-healing. " +
-    "Auto-reconciles stale states, retries transient failures, unblocks satisfied deps, and spawns ready agents. " +
-    "Use this in a loop: deploy tasks → team_await → check results → decide next action.",
+    "Block until all agents on a team finish, then return the final status. " +
+    "This tool polls internally every 5s — call it ONCE and wait for the result. " +
+    "Do NOT call this in a loop. It handles auto-reconciliation, retry, unblocking, and watchdog internally.",
   parameters,
   async execute(params) {
     const swarm = await import("../xethryon/swarm/index.js")
@@ -46,23 +51,63 @@ export const TeamAwaitTool = Tool.define("team_await", {
       }
     }
 
-    const waitMs = (params.wait_seconds ?? 15) * 1000
-    await new Promise((resolve) => setTimeout(resolve, waitMs))
+    const maxWait = (params.max_wait_seconds ?? 300) * 1000
+    const deadline = Date.now() + Math.min(maxWait, MAX_WAIT_MS)
+    const allActions: string[] = []
+    let pollCount = 0
 
+    // ─── Internal Polling Loop ────────────────────────────────────────
+    // Keep checking until all agents are idle/stopped OR timeout
+    while (Date.now() < deadline) {
+      pollCount++
+
+      // Check if any teammates are still running
+      const teammates = swarm.getTeammatesForTeam(params.team_name)
+      const anyRunning = teammates.some((m: any) => m.status === "running")
+
+      if (!anyRunning && pollCount > 1) {
+        // All agents done — break out and run final healing pass
+        break
+      }
+
+      // Wait before next check (skip first iteration to allow immediate check)
+      if (pollCount > 1 || anyRunning) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+      }
+    }
+
+    // ─── Final Healing Pass ───────────────────────────────────────────
+    // Run all 6 phases once after agents are done
     let tasks = await swarm.listTasks(params.team_name)
-    const teammates = swarm.getTeammatesForTeam(params.team_name)
 
     if (tasks.length === 0) {
+      // No task board — just report agent status
+      const teammates = swarm.getTeammatesForTeam(params.team_name)
+      const agentLines = teammates.map((m: any) => {
+        const icon = m.status === "running" ? "◉" : m.status === "idle" ? "○" : "✗"
+        return `  ${icon} ${m.name} (${m.status})`
+      })
+
+      // Read mailbox for merge telemetry
+      let reports = ""
+      try {
+        const unread = await swarm.readUnreadMessages("team-lead", params.team_name)
+        if (unread.length > 0) {
+          reports =
+            "\n\nAgent reports:\n" +
+            unread.map((m) => `  [${m.from}]: ${m.summary ?? m.text.slice(0, 300)}`).join("\n")
+          await swarm.markMessagesAsRead("team-lead", params.team_name)
+        }
+      } catch { /* mailbox might not exist */ }
+
       return {
-        title: "No tasks",
-        output: `Team "${params.team_name}" has no tasks on the board.`,
+        title: `All agents finished (no task board)`,
+        output: `Team "${params.team_name}" — all agents idle.\n\nAgents:\n${agentLines.join("\n")}${reports}\n\nPolled ${pollCount} time(s).`,
         metadata: { taskCount: 0, completed: 0, deleted: 0, pending: 0, blocked: 0, inProgress: 0, failed: 0, verifying: 0, allDone: true },
       }
     }
 
-    const actions: string[] = []
-
-    // ─── Phase 1: Auto-reconcile stale tasks ───────────────────────────
+    // Phase 1: Auto-reconcile stale tasks
     for (const task of tasks) {
       if (!["in_progress", "verifying"].includes(task.status) || !task.owner) continue
 
@@ -71,11 +116,10 @@ export const TeamAwaitTool = Tool.define("team_await", {
       if (!member) continue
 
       if (!swarm.isTeammateRunning(member.agentId)) {
-        // Agent finished but task stuck — run verification
         const verification = verifyTask(task)
         if (verification.passed || (task.outputs && task.outputs.length === 0)) {
           await updateTask(params.team_name, task.id, { status: "completed" })
-          actions.push(`reconciled: ${task.subject} → completed`)
+          allActions.push(`reconciled: ${task.subject} → completed`)
         } else {
           await updateTask(params.team_name, task.id, {
             status: "failed",
@@ -87,20 +131,19 @@ export const TeamAwaitTool = Tool.define("team_await", {
               failureKind: "transient",
             },
           })
-          actions.push(`reconciled: ${task.subject} → failed (${verification.failures.join(", ") || "no output"})`)
+          allActions.push(`reconciled: ${task.subject} → failed (${verification.failures.join(", ") || "no output"})`)
         }
       }
     }
 
     tasks = await swarm.listTasks(params.team_name)
 
-    // ─── Phase 2: Auto-retry transient failures (once) ─────────────────
+    // Phase 2: Auto-retry transient failures (once)
     for (const task of tasks) {
       if (task.status !== "failed") continue
       const retryCount = task.retryCount ?? 0
       const failureKind = task.result?.failureKind ?? "deterministic"
 
-      // Only retry transient failures, and only once
       if (failureKind !== "transient" || retryCount >= 1) continue
       if (!task.owner) continue
 
@@ -108,7 +151,6 @@ export const TeamAwaitTool = Tool.define("team_await", {
       const member = teamFile?.members.find((m) => m.name === task.owner)
       if (!member || swarm.isTeammateRunning(member.agentId)) continue
 
-      // Retry: reset to in_progress and re-spawn
       await updateTask(params.team_name, task.id, {
         status: "in_progress",
         retryCount: retryCount + 1,
@@ -122,12 +164,12 @@ export const TeamAwaitTool = Tool.define("team_await", {
         description: task.description,
         color: member.color,
       })
-      actions.push(`retried: ${task.subject} (attempt ${retryCount + 2})`)
+      allActions.push(`retried: ${task.subject} (attempt ${retryCount + 2})`)
     }
 
     tasks = await swarm.listTasks(params.team_name)
 
-    // ─── Phase 3: Auto-unblock tasks whose deps are met ────────────────
+    // Phase 3: Auto-unblock tasks whose deps are met
     for (const task of tasks) {
       if (!["pending", "blocked"].includes(task.status) || task.blockedBy.length === 0) continue
 
@@ -141,16 +183,16 @@ export const TeamAwaitTool = Tool.define("team_await", {
           blockedBy: [] as any,
           status: task.owner ? "in_progress" : "pending",
         })
-        actions.push(`unblocked: ${task.subject}`)
+        allActions.push(`unblocked: ${task.subject}`)
       }
     }
 
     tasks = await swarm.listTasks(params.team_name)
 
-    // ─── Phase 4: Auto-spawn ready tasks ───────────────────────────────
+    // Phase 4: Auto-spawn ready tasks
     for (const task of tasks) {
       if (!["pending", "in_progress"].includes(task.status) || !task.owner) continue
-      if (task.blockedBy.length > 0) continue // Still blocked
+      if (task.blockedBy.length > 0) continue
 
       const teamFile = await swarm.readTeamFileAsync(params.team_name)
       const member = teamFile?.members.find((m) => m.name === task.owner)
@@ -165,21 +207,20 @@ export const TeamAwaitTool = Tool.define("team_await", {
           description: task.description,
           color: member.color,
         })
-        actions.push(`spawned: ${task.owner} → ${task.subject}`)
+        allActions.push(`spawned: ${task.owner} → ${task.subject}`)
       }
     }
 
     tasks = await swarm.listTasks(params.team_name)
 
-    // ─── Phase 5: Watchdog — detect stuck tasks ────────────────────────
+    // Phase 5: Watchdog — detect stuck tasks
     const now = Date.now()
     for (const task of tasks) {
       if (task.status !== "in_progress") continue
-      const timeout = (task.timeout ?? DEFAULT_TIMEOUT) * 1000
+      const timeout = (task.timeout ?? DEFAULT_TASK_TIMEOUT) * 1000
       const elapsed = now - task.updatedAt
 
       if (elapsed > timeout) {
-        // Check if agent is actually running
         const teamFile = await swarm.readTeamFileAsync(params.team_name)
         const member = teamFile?.members.find((m) => m.name === task.owner)
         const isRunning = member ? swarm.isTeammateRunning(member.agentId) : false
@@ -195,31 +236,28 @@ export const TeamAwaitTool = Tool.define("team_await", {
               failureKind: "transient",
             },
           })
-          actions.push(`watchdog: ${task.subject} → failed (stale ${Math.round(elapsed / 1000)}s)`)
+          allActions.push(`watchdog: ${task.subject} → failed (stale ${Math.round(elapsed / 1000)}s)`)
         }
       }
     }
 
     tasks = await swarm.listTasks(params.team_name)
 
-    // ─── Phase 6: Invariant check ──────────────────────────────────────
+    // Phase 6: Invariant check
     const warnings: string[] = []
     for (const task of tasks) {
-      // Completed task with missing outputs
       if (task.status === "completed" && task.outputs && task.outputs.length > 0) {
         const { passed, failures } = verifyTask(task)
         if (!passed) {
           warnings.push(`⚠ "${task.subject}" completed but: ${failures.join(", ")}`)
         }
       }
-      // Blocked task with all deps met
       if (task.status === "blocked" && task.blockedBy.length > 0) {
         const allMet = task.blockedBy.every((id) => tasks.find((t) => t.id === id)?.status === "completed")
         if (allMet) {
           warnings.push(`⚠ "${task.subject}" blocked but all deps are completed`)
         }
       }
-      // Pending task with owner + no blockers
       if (task.status === "pending" && task.owner && task.blockedBy.length === 0) {
         warnings.push(`⚠ "${task.subject}" pending with owner but no blockers — should be in_progress`)
       }
@@ -236,6 +274,7 @@ export const TeamAwaitTool = Tool.define("team_await", {
       deleted: "—",
     }
 
+    const teammates = swarm.getTeammatesForTeam(params.team_name)
     const completed = tasks.filter((t) => t.status === "completed").length
     const deleted = tasks.filter((t) => t.status === "deleted").length
     const pending = tasks.filter((t) => t.status === "pending").length
@@ -261,28 +300,26 @@ export const TeamAwaitTool = Tool.define("team_await", {
       return `  ${icon} ${t.subject} (${t.status}${owner})${blockedStr}${retryStr}${failNotes}`
     })
 
-    // Unread reports
+    // Read mailbox for merge telemetry + agent reports
     let reports = ""
     try {
       const unread = await swarm.readUnreadMessages("team-lead", params.team_name)
       if (unread.length > 0) {
         reports =
           "\n\nAgent reports:\n" +
-          unread.map((m) => `  [${m.from}]: ${m.text.slice(0, 300)}`).join("\n")
+          unread.map((m) => `  [${m.from}]: ${m.summary ?? m.text.slice(0, 300)}`).join("\n")
         await swarm.markMessagesAsRead("team-lead", params.team_name)
       }
-    } catch {
-      // mailbox might not exist
-    }
+    } catch { /* mailbox might not exist */ }
 
     const header = allDone
       ? failed > 0
         ? `⚠ Finished with failures (${completed} completed, ${failed} failed, ${deleted} deleted)`
         : `✅ All tasks finished (${completed} completed, ${deleted} deleted)`
-      : `⏳ ${pending + blocked + inProgress + verifying} task(s) active — ${completed}/${tasks.length} done`
+      : `⏳ ${pending + blocked + inProgress + verifying} task(s) still active — ${completed}/${tasks.length} done (timed out after ${Math.round(maxWait / 1000)}s)`
 
-    const actionsSection = actions.length > 0
-      ? `\n\nAuto-actions this cycle:\n${actions.map((a) => `  ▸ ${a}`).join("\n")}`
+    const actionsSection = allActions.length > 0
+      ? `\n\nAuto-actions:\n${allActions.map((a) => `  ▸ ${a}`).join("\n")}`
       : ""
 
     const warningsSection = warnings.length > 0
@@ -300,6 +337,8 @@ export const TeamAwaitTool = Tool.define("team_await", {
       reports,
       actionsSection,
       warningsSection,
+      "",
+      `(polled ${pollCount} time(s) over ${Math.round((Date.now() - (deadline - Math.min(maxWait, MAX_WAIT_MS))) / 1000)}s)`,
     ].join("\n")
 
     return {
@@ -319,3 +358,4 @@ export const TeamAwaitTool = Tool.define("team_await", {
     }
   },
 })
+
