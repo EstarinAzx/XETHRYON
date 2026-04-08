@@ -90,13 +90,16 @@ function getMemoryBaseDir(): string {
 }
 
 /**
- * Returns the auto-memory base: the git worktree root if available,
- * otherwise the working directory. All worktrees of the same repo
- * share one auto-memory directory.
+ * Returns the auto-memory base: the working directory (sandbox).
+ * Each distinct project directory gets its own memory folder.
+ * 
+ * NOTE: Previously used Instance.worktree (git root), but non-git projects
+ * set worktree to "/" which sanitizes to "default", causing all non-git
+ * projects to share memory. Using directory ensures unique folders.
  */
 function getAutoMemBase(): string {
   try {
-    return Instance.worktree
+    return Instance.directory
   } catch {
     // Fallback if Instance isn't initialized yet
     return process.cwd()
