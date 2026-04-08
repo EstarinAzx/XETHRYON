@@ -108,66 +108,18 @@ export async function spawnTeammate(config: TeammateSpawnConfig): Promise<SpawnR
       backendType: "in-process",
     })
 
-    // Create abort controller for this teammate
-    const ac = new AbortController()
-
-    // Register in runtime state
-    const teammate: ActiveTeammate = {
-      agentId,
-      name: config.name,
-      teamName: config.teamName,
-      sessionId,
-      abortController: ac,
-      status: "running",
-    }
-    registerTeammate(teammate)
-
-    // Spawn the sub-session in the background (non-blocking)
-    runTeammateSession(config, agentId, sessionId, ac.signal).catch((err) => {
-      console.error(`[xethryon:swarm] teammate ${agentId} session error:`, err?.message ?? err)
-      updateTeammateStatus(agentId, "stopped")
-    })
-
-    return { success: true, agentId, sessionId }
-  } catch (err: unknown) {
-    return {
-      success: false,
-      agentId,
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    }
-  }
-}
-
-/**
- * Run a teammate's session. This is the core execution loop.
- * Runs in the background — awaited by nobody.
- */
-async function runTeammateSession(
-  config: TeammateSpawnConfig,
-  agentId: string,
-  sessionId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const { Session } = await getSessionModule()
-  const { SessionPrompt } = await getPromptModule()
-  const { MessageID } = await getSchemaModule()
-
-  try {
-    // ─── Worktree Isolation ──────────────────────────────────────────
+    // ─── Worktree Isolation (serialized) ──────────────────────────────
     // Each teammate gets its own git worktree (separate branch + directory)
     // so parallel agents never conflict on file writes.
-    // Falls back to shared directory for non-git projects.
+    // Done HERE (not in runTeammateSession) to avoid concurrent git/DB ops.
     let worktreeDir: string | undefined
     let worktreeBranch: string | undefined
     let workspaceId: string | undefined
 
     try {
       const { Instance } = await import("../../project/instance.js")
-      // Use directory (not worktree which is "/" for non-git projects)
       const cwd = Instance.directory
 
-      // Check git directly (not cached vcs) so auto-init from team_create is picked up
       const gitCheck = Bun.spawnSync(["git", "rev-parse", "--is-inside-work-tree"], { cwd })
       if (gitCheck.exitCode === 0) {
         const path = await import("path")
@@ -179,18 +131,15 @@ async function runTeammateSession(
         const wtDir = path.join(worktreeRoot, worktreeName)
         const wtBranch = `opencode/${worktreeName}`
 
-        // Create the worktree + branch directly
         const result = Bun.spawnSync(
           ["git", "worktree", "add", "--no-checkout", "-b", wtBranch, wtDir],
           { cwd },
         )
         if (result.exitCode === 0) {
-          // Populate the worktree with current HEAD content
           Bun.spawnSync(["git", "reset", "--hard"], { cwd: wtDir })
           worktreeDir = wtDir
           worktreeBranch = wtBranch
 
-          // Create workspace to bind the session to the worktree directory
           try {
             const { Workspace } = await import("../../control-plane/workspace.js")
             const ws = await Workspace.create({
@@ -209,17 +158,10 @@ async function runTeammateSession(
       // worktree creation failed — agent runs in shared directory
     }
 
-    // Store worktree info in runtime state
-    const teammate = getTeammate(agentId)
-    if (teammate) {
-      teammate.worktreeDir = worktreeDir
-      teammate.worktreeBranch = worktreeBranch
-      teammate.workspaceId = workspaceId
-    }
-
-    // Create a new sub-session with permissive ruleset.
-    // Swarm agents run headless — no TUI to approve permissions.
-    // Without this, agents hang forever on "allow once / whitelist / deny" prompts.
+    // ─── Session Creation (serialized) ──────────────────────────────
+    // Create the session in the sequential spawnTeammate call to avoid
+    // SQLite contention when multiple agents spawn simultaneously.
+    const { Session } = await getSessionModule()
     const session = await Session.create({
       title: `[Swarm] ${config.name} — ${config.description ?? config.teamName}`,
       permission: [
@@ -240,6 +182,58 @@ async function runTeammateSession(
       ...(workspaceId ? { workspaceID: workspaceId as any } : {}),
     })
 
+    // Create abort controller for this teammate
+    const ac = new AbortController()
+
+    // Register in runtime state
+    const teammate: ActiveTeammate = {
+      agentId,
+      name: config.name,
+      teamName: config.teamName,
+      sessionId: session.id,
+      abortController: ac,
+      status: "running",
+      worktreeDir,
+      worktreeBranch,
+      workspaceId,
+    }
+    registerTeammate(teammate)
+
+    // Spawn the sub-session in the background (non-blocking)
+    // Session + worktree already created above — only prompt execution is async
+    runTeammateSession(config, agentId, session.id, ac.signal, session, worktreeDir, worktreeBranch).catch((err) => {
+      updateTeammateStatus(agentId, "stopped")
+    })
+
+    return { success: true, agentId, sessionId: session.id }
+  } catch (err: unknown) {
+    return {
+      success: false,
+      agentId,
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+/**
+ * Run a teammate's session. This is the core execution loop.
+ * Runs in the background — awaited by nobody.
+ * Session + worktree are created before this is called (serialized in spawnTeammate).
+ */
+async function runTeammateSession(
+  config: TeammateSpawnConfig,
+  agentId: string,
+  sessionId: string,
+  signal: AbortSignal,
+  session: any,
+  worktreeDir?: string,
+  worktreeBranch?: string,
+): Promise<void> {
+  const { SessionPrompt } = await getPromptModule()
+  const { MessageID } = await getSchemaModule()
+
+  try {
     if (signal.aborted) {
       updateTeammateStatus(agentId, "stopped")
       return
