@@ -36,6 +36,7 @@ export const TeamCreateTool = Tool.define("team_create", {
     // ─── Git Auto-Init ──────────────────────────────────────────────
     // Worktree isolation requires git. If no VCS is detected, auto-init
     // so parallel agents always get their own branch + directory.
+    // spawn.ts checks git directly via rev-parse, not cached Instance.
     try {
       const { Instance } = await import("../project/instance.js")
       if (Instance.project.vcs !== "git") {
@@ -46,8 +47,6 @@ export const TeamCreateTool = Tool.define("team_create", {
           Bun.spawnSync(["git", "init"], { cwd })
           Bun.spawnSync(["git", "add", "-A"], { cwd })
           Bun.spawnSync(["git", "commit", "--allow-empty", "-m", "xethryon: initial commit"], { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } })
-          // Reload the Instance so cached project.vcs updates to "git"
-          await Instance.reload({ directory: cwd })
         }
       }
     } catch { /* non-fatal — worktree isolation will fall back to shared dir */ }
