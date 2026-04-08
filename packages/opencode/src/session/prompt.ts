@@ -1679,20 +1679,24 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // Fire Xethryon memory post-turn hook in the background
           if (_lastModel && _lastAgent && _lastUser2) {
             const memoryMsgs = yield* sessions.messages({ sessionID })
-            yield* Effect.promise(async () => {
+            const capturedAgent = _lastAgent!
+            const capturedModel = _lastModel!
+            const capturedUser = _lastUser2!
+            // Use setTimeout to run outside Effect scope — survives runLoop return
+            setTimeout(async () => {
               try {
                 await runMemoryPostTurnHook({
                   sessionID,
                   messages: memoryMsgs,
                   llmStream: LLM.stream,
-                  agent: _lastAgent!,
-                  model: _lastModel!,
-                  user: _lastUser2!,
+                  agent: capturedAgent,
+                  model: capturedModel,
+                  user: capturedUser,
                 })
               } catch (e) {
                 log.error("memory hook failed", { error: e })
               }
-            }).pipe(Effect.ignore, Effect.forkDaemon)
+            }, 100)
           }
 
           return yield* lastAssistant(sessionID)
