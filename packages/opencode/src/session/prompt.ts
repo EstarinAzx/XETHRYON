@@ -1692,7 +1692,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               } catch (e) {
                 log.error("memory hook failed", { error: e })
               }
-            }).pipe(Effect.ignore, Effect.forkIn(scope))
+            }).pipe(Effect.ignore, Effect.forkDaemon)
           }
 
           return yield* lastAssistant(sessionID)

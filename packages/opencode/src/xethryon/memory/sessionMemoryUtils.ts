@@ -23,9 +23,9 @@ export type SessionMemoryConfig = {
 }
 
 export const DEFAULT_SESSION_MEMORY_CONFIG: SessionMemoryConfig = {
-  minimumMessageTokensToInit: 10000,
-  minimumTokensBetweenUpdate: 5000,
-  toolCallsBetweenUpdates: 3,
+  minimumMessageTokensToInit: 2000,
+  minimumTokensBetweenUpdate: 1000,
+  toolCallsBetweenUpdates: 1,
 }
 
 // --- Module state ---

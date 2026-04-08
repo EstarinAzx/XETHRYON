@@ -31,8 +31,8 @@ type AutoDreamConfig = {
 }
 
 const DEFAULTS: AutoDreamConfig = {
-  minHours: 24,
-  minSessions: 5,
+  minHours: 0,
+  minSessions: 1,
 }
 
 // --- Module state ---
