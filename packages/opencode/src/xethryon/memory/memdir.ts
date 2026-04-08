@@ -146,6 +146,20 @@ export function buildMemoryLines(
         "- Do NOT write to MEMORY.md or create flat memory files — those are legacy",
         "- Organize semantically by topic, not chronologically",
         "- Update or remove articles that are wrong or outdated",
+        "",
+        "### When to proactively save (TAKE INITIATIVE)",
+        "",
+        "Do NOT wait for the user to say 'remember this'. Save knowledge articles automatically when you:",
+        "",
+        "- **Learn user preferences** — coding style, tool choices, communication style → `concepts/user-*.md`",
+        "- **Make architectural decisions** — why you chose X over Y, tradeoffs discussed → `concepts/`",
+        "- **Discover patterns** — error handling conventions, project structure rules → `concepts/`",
+        "- **Get corrected** — user says 'no not that', 'stop doing X', 'use Y instead' → `concepts/` with `[[wikilinks]]` to related articles",
+        "- **Complete a non-trivial task** — summarize what was built, key decisions, techniques used → `connections/`",
+        "- **Learn project context** — deployment targets, team conventions, deadlines → `concepts/`",
+        "- **Receive confirmations** — user validates an approach ('yes exactly', 'perfect') → save the validated pattern",
+        "",
+        "The goal is a self-building knowledge graph. Every session should leave behind at least one article if anything worth knowing was discussed.",
       ]
 
   const lines: string[] = [
