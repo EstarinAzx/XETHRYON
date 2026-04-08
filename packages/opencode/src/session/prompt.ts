@@ -17,7 +17,7 @@ import { ProviderTransform } from "../provider/transform"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
-import { initMemoryServices, runMemoryPostTurnHook } from "@/xethryon/memory"
+import { initMemoryServices, runMemoryPostTurnHook, appendToDailyLog } from "@/xethryon/memory"
 import { runReflection } from "@/xethryon/reflection"
 import PROMPT_PLAN from "../session/prompt/plan.txt"
 import BUILD_SWITCH from "../session/prompt/build-switch.txt"
@@ -1676,7 +1676,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 const flushMsgs = yield* sessions.messages({ sessionID })
                 setTimeout(async () => {
                   try {
-                    const { appendToDailyLog } = await import("@/xethryon/memory/compiler.js")
+                    // appendToDailyLog imported statically at top of file
                     const userMsgs = flushMsgs
                       .filter(m => m.info.role === "user")
                       .map(m => {
