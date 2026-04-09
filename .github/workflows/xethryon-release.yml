@@ -1,0 +1,231 @@
+name: Xethryon Release
+
+on:
+  push:
+    tags:
+      - 'xeth-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (e.g., 1.0.0)'
+        required: false
+        type: string
+
+env:
+  BUN_VERSION: 'latest'
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          elif [ "${{ github.event_name }}" == "push" ]; then
+            VERSION=$(echo "${{ github.ref_name }}" | sed 's/^xeth-v//')
+          else
+            VERSION="0.0.0-dev.$(date +%Y%m%d%H%M)"
+          fi
+          TAG="xeth-v${VERSION}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Building Xethryon v${VERSION} (tag: ${TAG})"
+
+  # ─── Linux + cross-compiled macOS x64 ───
+  build-linux:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: xethryon
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build all Linux + cross-compile targets
+        run: bun run script/build.ts
+        working-directory: packages/opencode
+        env:
+          OPENCODE_VERSION: ${{ needs.version.outputs.version }}
+          OPENCODE_CHANNEL: xethryon
+
+      - name: Upload Linux x64
+        uses: actions/upload-artifact@v4
+        with:
+          name: xethryon-linux-x64
+          path: packages/opencode/dist/opencode-linux-x64/bin/xethryon
+          retention-days: 5
+          if-no-files-found: ignore
+
+      - name: Upload Linux ARM64
+        uses: actions/upload-artifact@v4
+        with:
+          name: xethryon-linux-arm64
+          path: packages/opencode/dist/opencode-linux-arm64/bin/xethryon
+          retention-days: 5
+          if-no-files-found: ignore
+
+      - name: Upload macOS x64 (cross-compiled)
+        uses: actions/upload-artifact@v4
+        with:
+          name: xethryon-darwin-x64
+          path: packages/opencode/dist/opencode-darwin-x64/bin/xethryon
+          retention-days: 5
+          if-no-files-found: ignore
+
+  # ─── macOS ARM64 (Apple Silicon) ───
+  build-macos:
+    needs: version
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: xethryon
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build macOS ARM64
+        run: bun run script/build.ts
+        working-directory: packages/opencode
+        env:
+          OPENCODE_VERSION: ${{ needs.version.outputs.version }}
+          OPENCODE_CHANNEL: xethryon
+
+      - name: Upload macOS ARM64
+        uses: actions/upload-artifact@v4
+        with:
+          name: xethryon-darwin-arm64
+          path: packages/opencode/dist/opencode-darwin-arm64/bin/xethryon
+          retention-days: 5
+
+  # ─── Windows x64 ───
+  build-windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: xethryon
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install
+        shell: bash
+
+      - name: Build Windows
+        run: bun run script/build.ts --single
+        working-directory: packages/opencode
+        shell: bash
+        env:
+          OPENCODE_VERSION: ${{ needs.version.outputs.version }}
+          OPENCODE_CHANNEL: xethryon
+
+      - name: Upload Windows x64
+        uses: actions/upload-artifact@v4
+        with:
+          name: xethryon-windows-x64
+          path: packages/opencode/dist/opencode-windows-x64/bin/xethryon.exe
+          retention-days: 5
+
+  # ─── Release ───
+  release:
+    needs: [version, build-linux, build-macos, build-windows]
+    if: always() && needs.build-linux.result == 'success' && needs.build-windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+
+          # Linux
+          [ -f artifacts/xethryon-linux-x64/xethryon ] && \
+            cp artifacts/xethryon-linux-x64/xethryon release/xethryon-linux-x64
+          [ -f artifacts/xethryon-linux-arm64/xethryon ] && \
+            cp artifacts/xethryon-linux-arm64/xethryon release/xethryon-linux-arm64
+
+          # macOS
+          [ -f artifacts/xethryon-darwin-arm64/xethryon ] && \
+            cp artifacts/xethryon-darwin-arm64/xethryon release/xethryon-darwin-arm64
+          [ -f artifacts/xethryon-darwin-x64/xethryon ] && \
+            cp artifacts/xethryon-darwin-x64/xethryon release/xethryon-darwin-x64
+
+          # Windows
+          [ -f artifacts/xethryon-windows-x64/xethryon.exe ] && \
+            cp artifacts/xethryon-windows-x64/xethryon.exe release/xethryon-windows-x64.exe
+
+          chmod +x release/xethryon-* 2>/dev/null || true
+          echo "Release files:"
+          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > checksums.sha256
+          cat checksums.sha256
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Xethryon ${{ needs.version.outputs.tag }}
+          body: |
+            ## Xethryon ${{ needs.version.outputs.tag }}
+
+            Neural Code Interface — autonomous agent with persistent knowledge graph, swarm orchestration, and cyberpunk soul.
+
+            ### Downloads
+
+            | Platform | Architecture | File |
+            |----------|--------------|------|
+            | Windows | x64 | `xethryon-windows-x64.exe` |
+            | Linux | x64 | `xethryon-linux-x64` |
+            | Linux | ARM64 | `xethryon-linux-arm64` |
+            | macOS | Apple Silicon | `xethryon-darwin-arm64` |
+            | macOS | Intel | `xethryon-darwin-x64` |
+
+            ### Quick Install
+
+            **Windows (PowerShell):**
+            ```powershell
+            irm https://raw.githubusercontent.com/EstarinAzx/XETHRYON/xethryon/install.ps1 | iex
+            ```
+
+            **Linux / macOS:**
+            ```bash
+            curl -L https://github.com/EstarinAzx/XETHRYON/releases/download/${{ needs.version.outputs.tag }}/xethryon-$(uname -s | tr A-Z a-z)-$(uname -m | sed 's/aarch64/arm64/' | sed 's/x86_64/x64/') -o /usr/local/bin/xethryon && chmod +x /usr/local/bin/xethryon
+            ```
+
+            ### Verify
+            ```bash
+            sha256sum -c checksums.sha256
+            ```
+          files: release/*
+          draft: false
+          prerelease: false
