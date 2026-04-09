@@ -8,21 +8,20 @@ A terminal-based AI coding agent. Fork of [OpenCode](https://opencode.ai) with s
 
 ## Features
 
-### Persistent Project Memory
-The agent extracts learnings from every conversation and stores them as durable memory files. On subsequent sessions, relevant memories are retrieved automatically based on the current query — no manual context loading required.
+### Persistent Knowledge Graph
+The agent builds a **graph-based knowledge base** that grows with every conversation. Knowledge is stored as interconnected wiki articles with `[[wikilinks]]`, creating an Obsidian-compatible neural network that compounds over time.
 
-- Post-turn extraction of key facts and patterns
-- LLM-ranked retrieval (not keyword matching)
-- AutoDream consolidation after 24h or 5 sessions
-- Stored at `~/.xethryon/projects/<project>/memory/`
+- **Self-organizing folders** — the agent classifies knowledge into `people/`, `tools/`, `techniques/`, `decisions/`, `connections/`, `qa/`, or any project-specific category
+- **Proactive saving** — no "remember this" needed. The agent takes initiative on corrections, preferences, architectural decisions, and validated patterns
+- **Neural routing** — each piece of information is routed to the FIRST matching category (`people/` → `tools/` → `qa/` → `decisions/` → `techniques/` → `connections/` → `concepts/`)
+- **Per-project isolation** — each working directory gets its own knowledge graph at `~/.xethryon/projects/<project>/memory/knowledge/`
+- **Obsidian graph** — open the `knowledge/` folder in Obsidian to see your project's neural map live
+
+![Knowledge graph in action — agent saves team info, decisions, and patterns to categorized folders with Obsidian graph visualization](assets/persistent_memory_replacement.png)
 
 **Session 1** — teaching a convention:
 
 ![Session 1 — agent stores the API convention to persistent memory](assets/persistent_memory_session1.png)
-
-**Session 2** — new chat, recalls it without being reminded:
-
-![Session 2 — agent recalls the kebab-case and response format convention from memory](assets/persisntent_memory_session2.png)
 
 ### Git-Aware Context
 The agent sees branch name, uncommitted changes, merge/rebase state, and ahead/behind counts without running explicit commands. This informs decisions about stashing, branching, and conflict handling.
@@ -229,7 +228,7 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 ┌─────────────────▼────────────────────────────┐
 │               Worker Thread                   │
 │                                               │
-│  System Prompt + Memory Recall + Git Context  │
+│  System Prompt + Knowledge Recall + Git Context│
 │                    ↓                          │
 │              LLM Turn (tool calls)            │
 │                    ↓                          │
@@ -237,7 +236,11 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 │                    ↓                          │
 │         Autonomy Checklist (invoke_skill)      │
 │                    ↓                          │
-│         Memory Post-Turn Hook (extract/store)  │
+│    Knowledge Graph (neural routing + save)     │
+│      ├─ Route: people/tools/decisions/...      │
+│      ├─ [[wikilinks]] for graph edges          │
+│      ├─ Daily log append                       │
+│      └─ Obsidian-compatible output             │
 │                    ↓                          │
 │     Swarm Orchestration (autonomy-only)        │
 │       ├─ spawn.ts → sub-sessions (headless)    │
@@ -258,7 +261,10 @@ Slash commands via the TUI prompt or command palette (`Ctrl+P`):
 | System | Origin |
 |--------|--------|
 | TUI + Session Management | OpenCode |
-| Memory Persistence + AutoDream | Claude Code (ported) |
+| Memory Persistence (base) | Claude Code (ported) |
+| Knowledge Graph + Neural Routing | Original |
+| Self-Organizing Memory Folders | Original |
+| Obsidian-Compatible Wiki Output | Original |
 | Bundled Skills System | Claude Code (ported) |
 | Swarm Orchestration | Claude Code (ported) |
 | Event-Driven Cascade + Auto-Inject | Original |
