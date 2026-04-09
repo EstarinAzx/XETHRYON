@@ -19,16 +19,6 @@ The agent builds a **graph-based knowledge base** that grows with every conversa
 
 ![Knowledge graph in action — agent saves team info, decisions, and patterns to categorized folders with Obsidian graph visualization](assets/persistent_memory_replacement.png)
 
-**Session 1** — teaching a convention:
-
-![Session 1 — agent stores the API convention to persistent memory](assets/persistent_memory_session1.png)
-
-### Git-Aware Context
-The agent sees branch name, uncommitted changes, merge/rebase state, and ahead/behind counts without running explicit commands. This informs decisions about stashing, branching, and conflict handling.
-
-Toggle with `XETHRYON_GIT_AWARE=0`.
-
-![Git-aware context — agent knows branch, uncommitted changes, and remote status](assets/gitaware.png)
 
 ### Autonomy Mode (`F4`)
 When enabled, the agent operates with full initiative — no waiting, no asking, just execution.
