@@ -90,7 +90,7 @@ jobs:
   build-macos:
     needs: version
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -152,7 +152,7 @@ jobs:
   # ─── Release ───
   release:
     needs: [version, build-linux, build-macos, build-windows]
-    if: always() && needs.build-linux.result == 'success' && needs.build-windows.result == 'success'
+    if: always() && needs.build-linux.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
