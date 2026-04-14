@@ -37,6 +37,8 @@ import vesper from "./theme/vesper.json" with { type: "json" }
 import zenburn from "./theme/zenburn.json" with { type: "json" }
 import carbonfox from "./theme/carbonfox.json" with { type: "json" }
 import xethryon from "./theme/xethryon.json" with { type: "json" }
+import xethryonCodeRed from "./theme/xethryon-code-red.json" with { type: "json" }
+import xethryon2077 from "./theme/xethryon-2077.json" with { type: "json" }
 import { useKV } from "./kv"
 import { useRenderer } from "@opentui/solid"
 import { createStore, produce } from "solid-js/store"
@@ -121,6 +123,8 @@ export const DEFAULT_THEMES: Record<string, ThemeJson> = {
   zenburn,
   carbonfox,
   xethryon,
+  ["xethryon-code-red"]: xethryonCodeRed,
+  ["xethryon-2077"]: xethryon2077,
 }
 
 type State = {

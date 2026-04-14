@@ -1,0 +1,236 @@
+{
+  "$schema": "https://opencode.ai/theme.json",
+  "defs": {
+    "bg": "#06070a",
+    "bgPanel": "#0a0c10",
+    "bgElement": "#101318",
+    "fg": "#d0d4d8",
+    "fgMuted": "#505860",
+    "cyan": "#00d4e0",
+    "cyanDim": "#009aaa",
+    "cyanDark": "#006a77",
+    "cyanGhost": "#002c33",
+    "crimson": "#ff003c",
+    "crimsonDim": "#d0002e",
+    "crimsonDark": "#880020",
+    "crimsonGlow": "#ff2050",
+    "warmWhite": "#e8e0e0",
+    "salmon": "#ff6b6b",
+    "amber": "#e5a700",
+    "yellow": "#facc15",
+    "red": "#e53935",
+    "redBright": "#ff5252",
+    "comment": "#2a3038",
+    "punctuation": "#222830"
+  },
+  "theme": {
+    "primary": {
+      "dark": "crimson",
+      "light": "#cc0030"
+    },
+    "secondary": {
+      "dark": "cyan",
+      "light": "#009aaa"
+    },
+    "accent": {
+      "dark": "crimsonDim",
+      "light": "#cc0030"
+    },
+    "error": {
+      "dark": "crimsonGlow",
+      "light": "#e53935"
+    },
+    "warning": {
+      "dark": "amber",
+      "light": "#f59e0b"
+    },
+    "success": {
+      "dark": "cyan",
+      "light": "#009aaa"
+    },
+    "info": {
+      "dark": "cyanDim",
+      "light": "#009aaa"
+    },
+    "text": {
+      "dark": "fg",
+      "light": "#1e293b"
+    },
+    "textMuted": {
+      "dark": "fgMuted",
+      "light": "#64748b"
+    },
+    "selectedListItemText": {
+      "dark": "bg",
+      "light": "#ffffff"
+    },
+    "background": {
+      "dark": "bg",
+      "light": "#f8fafc"
+    },
+    "backgroundPanel": {
+      "dark": "bgPanel",
+      "light": "#f1f5f9"
+    },
+    "backgroundElement": {
+      "dark": "bgElement",
+      "light": "#e2e8f0"
+    },
+    "backgroundMenu": {
+      "dark": "#0d0f14",
+      "light": "#e2e8f0"
+    },
+    "border": {
+      "dark": "#1a1e28",
+      "light": "#cbd5e1"
+    },
+    "borderActive": {
+      "dark": "crimson",
+      "light": "#cc0030"
+    },
+    "borderSubtle": {
+      "dark": "#121620",
+      "light": "#e2e8f0"
+    },
+    "diffAdded": {
+      "dark": "cyan",
+      "light": "#009aaa"
+    },
+    "diffRemoved": {
+      "dark": "crimson",
+      "light": "#cc0030"
+    },
+    "diffContext": {
+      "dark": "comment",
+      "light": "#64748b"
+    },
+    "diffHunkHeader": {
+      "dark": "cyanDim",
+      "light": "#009aaa"
+    },
+    "diffHighlightAdded": {
+      "dark": "cyan",
+      "light": "#009aaa"
+    },
+    "diffHighlightRemoved": {
+      "dark": "crimsonGlow",
+      "light": "#ff5252"
+    },
+    "diffAddedBg": {
+      "dark": "#061a1e",
+      "light": "#f0fdf4"
+    },
+    "diffRemovedBg": {
+      "dark": "#1a0610",
+      "light": "#fef2f2"
+    },
+    "diffContextBg": {
+      "dark": "bgPanel",
+      "light": "#f8fafc"
+    },
+    "diffLineNumber": {
+      "dark": "#1a2028",
+      "light": "#94a3b8"
+    },
+    "diffAddedLineNumberBg": {
+      "dark": "#061a1e",
+      "light": "#f0fdf4"
+    },
+    "diffRemovedLineNumberBg": {
+      "dark": "#1a0610",
+      "light": "#fef2f2"
+    },
+    "markdownText": {
+      "dark": "fg",
+      "light": "#1e293b"
+    },
+    "markdownHeading": {
+      "dark": "crimson",
+      "light": "#cc0030"
+    },
+    "markdownLink": {
+      "dark": "cyan",
+      "light": "#009aaa"
+    },
+    "markdownLinkText": {
+      "dark": "cyanDim",
+      "light": "#009aaa"
+    },
+    "markdownCode": {
+      "dark": "cyan",
+      "light": "#009aaa"
+    },
+    "markdownBlockQuote": {
+      "dark": "fgMuted",
+      "light": "#64748b"
+    },
+    "markdownEmph": {
+      "dark": "salmon",
+      "light": "#ff6b6b"
+    },
+    "markdownStrong": {
+      "dark": "crimson",
+      "light": "#cc0030"
+    },
+    "markdownHorizontalRule": {
+      "dark": "#1a1e28",
+      "light": "#cbd5e1"
+    },
+    "markdownListItem": {
+      "dark": "crimsonDim",
+      "light": "#cc0030"
+    },
+    "markdownListEnumeration": {
+      "dark": "cyanDim",
+      "light": "#009aaa"
+    },
+    "markdownImage": {
+      "dark": "cyan",
+      "light": "#009aaa"
+    },
+    "markdownImageText": {
+      "dark": "cyanDim",
+      "light": "#009aaa"
+    },
+    "markdownCodeBlock": {
+      "dark": "fg",
+      "light": "#1e293b"
+    },
+    "syntaxComment": {
+      "dark": "comment",
+      "light": "#94a3b8"
+    },
+    "syntaxKeyword": {
+      "dark": "crimson",
+      "light": "#cc0030"
+    },
+    "syntaxFunction": {
+      "dark": "cyan",
+      "light": "#009aaa"
+    },
+    "syntaxVariable": {
+      "dark": "fg",
+      "light": "#1e293b"
+    },
+    "syntaxString": {
+      "dark": "cyanDim",
+      "light": "#009aaa"
+    },
+    "syntaxNumber": {
+      "dark": "amber",
+      "light": "#f59e0b"
+    },
+    "syntaxType": {
+      "dark": "salmon",
+      "light": "#ff6b6b"
+    },
+    "syntaxOperator": {
+      "dark": "crimsonDim",
+      "light": "#cc0030"
+    },
+    "syntaxPunctuation": {
+      "dark": "punctuation",
+      "light": "#64748b"
+    }
+  }
+}

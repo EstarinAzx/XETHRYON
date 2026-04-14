@@ -1,0 +1,242 @@
+{
+  "$schema": "https://opencode.ai/theme.json",
+  "defs": {
+    "bg": "#080404",
+    "bgPanel": "#0d0708",
+    "bgElement": "#16090a",
+    "fg": "#d4c4c6",
+    "fgMuted": "#6b4a4e",
+    "crimsonNeon": "#ff1a36",
+    "crimsonDim": "#cc1429",
+    "crimsonDark": "#8b0d1c",
+    "bloodOrange": "#ff3d1a",
+    "bloodOrangeDim": "#cc3014",
+    "bloodOrangeDark": "#8b200d",
+    "ember": "#e54500",
+    "emberDim": "#b33700",
+    "scarlet": "#ff0040",
+    "rose": "#ff4d6a",
+    "roseDeep": "#cc0033",
+    "bone": "#f0dede",
+    "ash": "#8a7070",
+    "warmWhite": "#ffe6e6",
+    "orange": "#ff6b35",
+    "yellow": "#ffcc33",
+    "amber": "#e5a700",
+    "red": "#e53935",
+    "redBright": "#ff5252",
+    "teal": "#cc3344",
+    "comment": "#3d2428",
+    "punctuation": "#33191c"
+  },
+  "theme": {
+    "primary": {
+      "dark": "crimsonNeon",
+      "light": "#cc1429"
+    },
+    "secondary": {
+      "dark": "bloodOrange",
+      "light": "#cc3014"
+    },
+    "accent": {
+      "dark": "ember",
+      "light": "#b33700"
+    },
+    "error": {
+      "dark": "redBright",
+      "light": "#e53935"
+    },
+    "warning": {
+      "dark": "yellow",
+      "light": "#f59e0b"
+    },
+    "success": {
+      "dark": "crimsonNeon",
+      "light": "#cc1429"
+    },
+    "info": {
+      "dark": "bloodOrange",
+      "light": "#cc3014"
+    },
+    "text": {
+      "dark": "fg",
+      "light": "#1e293b"
+    },
+    "textMuted": {
+      "dark": "fgMuted",
+      "light": "#64748b"
+    },
+    "selectedListItemText": {
+      "dark": "bg",
+      "light": "#ffffff"
+    },
+    "background": {
+      "dark": "bg",
+      "light": "#f8fafc"
+    },
+    "backgroundPanel": {
+      "dark": "bgPanel",
+      "light": "#f1f5f9"
+    },
+    "backgroundElement": {
+      "dark": "bgElement",
+      "light": "#e2e8f0"
+    },
+    "backgroundMenu": {
+      "dark": "#100608",
+      "light": "#e2e8f0"
+    },
+    "border": {
+      "dark": "#2a1014",
+      "light": "#cbd5e1"
+    },
+    "borderActive": {
+      "dark": "crimsonNeon",
+      "light": "#cc1429"
+    },
+    "borderSubtle": {
+      "dark": "#1a0a0c",
+      "light": "#e2e8f0"
+    },
+    "diffAdded": {
+      "dark": "crimsonNeon",
+      "light": "#cc1429"
+    },
+    "diffRemoved": {
+      "dark": "ash",
+      "light": "#64748b"
+    },
+    "diffContext": {
+      "dark": "comment",
+      "light": "#64748b"
+    },
+    "diffHunkHeader": {
+      "dark": "bloodOrange",
+      "light": "#cc3014"
+    },
+    "diffHighlightAdded": {
+      "dark": "crimsonNeon",
+      "light": "#cc1429"
+    },
+    "diffHighlightRemoved": {
+      "dark": "redBright",
+      "light": "#ff5252"
+    },
+    "diffAddedBg": {
+      "dark": "#1a0608",
+      "light": "#fef2f2"
+    },
+    "diffRemovedBg": {
+      "dark": "#12080a",
+      "light": "#f8fafc"
+    },
+    "diffContextBg": {
+      "dark": "bgPanel",
+      "light": "#f8fafc"
+    },
+    "diffLineNumber": {
+      "dark": "#2a1216",
+      "light": "#94a3b8"
+    },
+    "diffAddedLineNumberBg": {
+      "dark": "#1a0608",
+      "light": "#fef2f2"
+    },
+    "diffRemovedLineNumberBg": {
+      "dark": "#12080a",
+      "light": "#f8fafc"
+    },
+    "markdownText": {
+      "dark": "fg",
+      "light": "#1e293b"
+    },
+    "markdownHeading": {
+      "dark": "crimsonNeon",
+      "light": "#cc1429"
+    },
+    "markdownLink": {
+      "dark": "bloodOrange",
+      "light": "#cc3014"
+    },
+    "markdownLinkText": {
+      "dark": "bloodOrangeDim",
+      "light": "#cc3014"
+    },
+    "markdownCode": {
+      "dark": "ember",
+      "light": "#b33700"
+    },
+    "markdownBlockQuote": {
+      "dark": "fgMuted",
+      "light": "#64748b"
+    },
+    "markdownEmph": {
+      "dark": "ember",
+      "light": "#b33700"
+    },
+    "markdownStrong": {
+      "dark": "crimsonNeon",
+      "light": "#cc1429"
+    },
+    "markdownHorizontalRule": {
+      "dark": "#2a1014",
+      "light": "#cbd5e1"
+    },
+    "markdownListItem": {
+      "dark": "crimsonDim",
+      "light": "#cc1429"
+    },
+    "markdownListEnumeration": {
+      "dark": "bloodOrangeDim",
+      "light": "#cc3014"
+    },
+    "markdownImage": {
+      "dark": "bloodOrange",
+      "light": "#cc3014"
+    },
+    "markdownImageText": {
+      "dark": "rose",
+      "light": "#cc0033"
+    },
+    "markdownCodeBlock": {
+      "dark": "fg",
+      "light": "#1e293b"
+    },
+    "syntaxComment": {
+      "dark": "comment",
+      "light": "#94a3b8"
+    },
+    "syntaxKeyword": {
+      "dark": "crimsonNeon",
+      "light": "#cc1429"
+    },
+    "syntaxFunction": {
+      "dark": "bloodOrange",
+      "light": "#cc3014"
+    },
+    "syntaxVariable": {
+      "dark": "fg",
+      "light": "#1e293b"
+    },
+    "syntaxString": {
+      "dark": "ember",
+      "light": "#b33700"
+    },
+    "syntaxNumber": {
+      "dark": "scarlet",
+      "light": "#ff0040"
+    },
+    "syntaxType": {
+      "dark": "rose",
+      "light": "#cc0033"
+    },
+    "syntaxOperator": {
+      "dark": "crimsonDim",
+      "light": "#cc1429"
+    },
+    "syntaxPunctuation": {
+      "dark": "punctuation",
+      "light": "#64748b"
+    }
+  }
+}

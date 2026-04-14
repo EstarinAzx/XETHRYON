@@ -1013,7 +1013,7 @@ export function Prompt(props: PromptProps) {
 
                 // trim ' from the beginning and end of the pasted content. just
                 // ' and nothing else
-                const filepath = pastedContent.replace(/^'+|'+$/g, "").replace(/\\ /g, " ")
+                const filepath = pastedContent.replace(/^['"]+|['"]+$/g, "").replace(/\\ /g, " ")
                 const isUrl = /^(https?):\/\//.test(filepath)
                 if (!isUrl) {
                   try {

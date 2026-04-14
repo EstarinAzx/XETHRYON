@@ -1271,7 +1271,7 @@ function UserMessage(props: {
           {/* User label bar */}
           <box flexDirection="row" gap={1} paddingLeft={1}>
             <text fg={isInjection() ? theme.accent : color()}>
-              <b>{isInjection() ? "❐ XETHRYON" : "▸ YOU"}</b>
+              <b>{isInjection() ? "❐ XETHRYON" : "▸ USER"}</b>
             </text>
             <Show when={isInjection()}>
               <text>
