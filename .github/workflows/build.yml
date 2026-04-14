@@ -1,0 +1,69 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [xethryon]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            artifact: opencode-linux-x64
+          - os: windows-latest
+            target: windows-x64
+            artifact: opencode-windows-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build binary
+        working-directory: packages/opencode
+        run: bun run build --single
+
+      - name: Smoke test (version check)
+        working-directory: packages/opencode
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            ./dist/${{ matrix.artifact }}/bin/xethryon.exe --version
+          else
+            chmod +x ./dist/${{ matrix.artifact }}/bin/xethryon
+            ./dist/${{ matrix.artifact }}/bin/xethryon --version
+          fi
+
+      - name: Package artifact
+        working-directory: packages/opencode/dist/${{ matrix.artifact }}/bin
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            7z a -tzip ../../../${{ matrix.artifact }}.zip *
+          else
+            tar -czf ../../../${{ matrix.artifact }}.tar.gz *
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            packages/opencode/${{ matrix.artifact }}.zip
+            packages/opencode/${{ matrix.artifact }}.tar.gz
+          if-no-files-found: ignore

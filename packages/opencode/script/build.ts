@@ -154,26 +154,45 @@ const allTargets: {
   },
 ]
 
-const targets = singleFlag
-  ? allTargets.filter((item) => {
-      if (item.os !== process.platform || item.arch !== process.arch) {
-        return false
-      }
+const linuxFlag = process.argv.includes("--linux")
+const targetFlag = process.argv.find((a) => a.startsWith("--target="))?.split("=")[1]
 
-      // When building for the current platform, prefer a single native binary by default.
-      // Baseline binaries require additional Bun artifacts and can be flaky to download.
-      if (item.avx2 === false) {
-        return baselineFlag
-      }
-
-      // also skip abi-specific builds for the same reason
-      if (item.abi !== undefined) {
-        return false
-      }
-
-      return true
+const targets = targetFlag
+  ? // --target=linux-x64, --target=darwin-arm64, etc.
+    allTargets.filter((item) => {
+      const key = `${item.os === "win32" ? "windows" : item.os}-${item.arch}`
+      return key === targetFlag && item.avx2 !== false && !item.abi
     })
-  : allTargets
+  : linuxFlag
+    ? // --linux: build current platform + linux-x64
+      allTargets.filter((item) => {
+        if (item.avx2 === false || item.abi !== undefined) return false
+        // Current platform
+        if (item.os === process.platform && item.arch === process.arch) return true
+        // Linux x64
+        if (item.os === "linux" && item.arch === "x64") return true
+        return false
+      })
+    : singleFlag
+      ? allTargets.filter((item) => {
+          if (item.os !== process.platform || item.arch !== process.arch) {
+            return false
+          }
+
+          // When building for the current platform, prefer a single native binary by default.
+          // Baseline binaries require additional Bun artifacts and can be flaky to download.
+          if (item.avx2 === false) {
+            return baselineFlag
+          }
+
+          // also skip abi-specific builds for the same reason
+          if (item.abi !== undefined) {
+            return false
+          }
+
+          return true
+        })
+      : allTargets
 
 await $`rm -rf dist`
 

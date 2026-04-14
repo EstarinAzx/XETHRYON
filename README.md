@@ -113,6 +113,17 @@ Ships with a dark Cyberpunk-inspired color palette. Editable via `packages/openc
 
 ## Install
 
+### Pre-built Binaries (Recommended)
+
+Download the latest build artifacts from [GitHub Actions](https://github.com/EstarinAzx/XETHRYON/actions):
+
+| Platform | Artifact |
+|----------|----------|
+| Windows x64 | `opencode-windows-x64.zip` |
+| Linux x64 | `opencode-linux-x64.tar.gz` |
+
+Extract and place the binary somewhere in your `PATH`.
+
 ### Quick Install (Windows)
 
 ```powershell
@@ -138,6 +149,19 @@ bun run build --single
 ```
 
 Binary outputs to `dist/opencode-<platform>-<arch>/bin/xethryon(.exe)`.
+
+**Build flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--single` | Build for current platform only |
+| `--linux` | Build for current platform + Linux x64 |
+| `--target=linux-x64` | Build for a specific platform only |
+| `--target=darwin-arm64` | Build for macOS ARM (Apple Silicon) |
+| `--skip-install` | Skip dependency re-install step |
+| `--skip-embed-web-ui` | Skip embedding the web UI (faster builds) |
+
+> **Note:** Cross-compiling from Windows may fail due to Bun runtime download issues. For reliable Linux builds, push to the `xethryon` branch — GitHub Actions will build both platforms automatically.
 
 ### Add to PATH
 
