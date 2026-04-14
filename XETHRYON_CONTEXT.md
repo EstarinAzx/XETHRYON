@@ -290,14 +290,31 @@ bun run build --single
 ```
 Output: `dist/opencode-windows-x64/bin/xethryon.exe`
 
+### Build flags:
+| Flag | Description |
+|------|-------------|
+| `--single` | Build for current platform only |
+| `--linux` | Build current platform + Linux x64 |
+| `--target=linux-x64` | Build for a specific platform only |
+| `--target=darwin-arm64` | Build for macOS ARM (Apple Silicon) |
+| `--skip-install` | Skip dependency re-install step |
+| `--skip-embed-web-ui` | Skip embedding the web UI (faster builds) |
+| `--baseline` | Include baseline (non-AVX2) builds |
+
+### Cross-compilation from Windows:
+⚠ **Cross-compiling Linux from Windows fails** due to Bun's inability to download the Linux runtime binary (`bun-linux-x64-v1.3.11`). This is a known Bun issue, especially on non-C: drives.
+
+**Solution:** Push to the `xethryon` branch → GitHub Actions CI builds both Windows x64 and Linux x64 natively on their respective runners. Artifacts are downloadable from the Actions tab.
+
+### CI/CD:
+- **Workflow file:** `.github/workflows/build.yml`
+- **Triggers:** Push to `xethryon` branch, or manual `workflow_dispatch`
+- **Matrix:** `ubuntu-latest` (Linux x64) + `windows-latest` (Windows x64)
+- **Artifacts:** `opencode-linux-x64.tar.gz`, `opencode-windows-x64.zip`
+
 ### Deploy locally:
 ```powershell
 Copy-Item "packages\opencode\dist\opencode-windows-x64\bin\xethryon.exe" -Destination "$env:LOCALAPPDATA\xethryon\bin\xethryon.exe" -Force
-```
-
-### Build all platforms:
-```bash
-bun run build   # Will build linux-arm64, linux-x64, darwin-arm64, etc.
 ```
 
 ### Run in dev mode (no build needed):
