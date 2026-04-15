@@ -16,6 +16,7 @@ import PROMPT_VERIFICATION from "./prompt/verification.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import PROMPT_REFLECTION from "./prompt/reflection.txt"
+import PROMPT_XETHRYON from "./prompt/xethryon.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@/global"
@@ -112,6 +113,7 @@ export namespace Agent {
               name: "build",
               description: "The default agent. Executes tools based on configured permissions.",
               options: {},
+              prompt: PROMPT_XETHRYON,
               permission: Permission.merge(
                 defaults,
                 Permission.fromConfig({
