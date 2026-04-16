@@ -1108,8 +1108,9 @@ export function Prompt(props: PromptProps) {
                     {"  AUTONOMY: "}
                     <span style={{ fg: store.autonomy ? theme.success : theme.textMuted }}><b>{store.autonomy ? "ON" : "OFF"}</b></span>
                     {(() => {
-                      const [cockpit, setCockpit] = createSignal(getPoolStatus(local.model.parsed().provider))
-                      const timer = setInterval(() => setCockpit(getPoolStatus(local.model.parsed().provider)), 5000)
+                      const providerID = () => local.model.current()?.providerID ?? ""
+                      const [cockpit, setCockpit] = createSignal(getPoolStatus(providerID()))
+                      const timer = setInterval(() => setCockpit(getPoolStatus(providerID())), 5000)
                       onCleanup(() => clearInterval(timer))
                       return (
                         <Show when={cockpit()}>
