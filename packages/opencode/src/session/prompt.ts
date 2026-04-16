@@ -1684,9 +1684,15 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                     const debugPath = os.homedir() + "/.xethryon/flush-debug.log"
                     fs.appendFileSync(debugPath, `[${new Date().toISOString()}] setTimeout fired, msgs=${capturedMsgs.length}\n`)
 
+                    const textFromParts = (msg: typeof capturedMsgs[number]) =>
+                      msg.parts
+                        .map(p => ("content" in p && typeof p.content === "string") ? p.content : ("text" in p && typeof p.text === "string") ? p.text : "")
+                        .filter(Boolean)
+                        .join("\n")
+
                     const userMsgs = capturedMsgs
-                      .filter(m => m.role === "user" && typeof m.content === "string")
-                      .map(m => String(m.content).slice(0, 500))
+                      .filter(m => m.info.role === "user")
+                      .map(m => textFromParts(m).slice(0, 500))
                       .filter(t => t.length > 10)
 
                     if (userMsgs.length === 0) {
@@ -1695,8 +1701,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                     }
 
                     const assistantMsgs = capturedMsgs
-                      .filter(m => m.role === "assistant" && typeof m.content === "string")
-                      .map(m => String(m.content).slice(0, 300))
+                      .filter(m => m.info.role === "assistant")
+                      .map(m => textFromParts(m).slice(0, 300))
                       .filter(t => t.length > 20)
 
                     const entry = [
@@ -1723,6 +1729,25 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               break
             }
             continue
+          }
+
+          // Xethryon: fire memory post-turn hook in background
+          if (_lastAgent && _lastModel && _lastUser2) {
+            const hookMsgs = yield* MessageV2.filterCompactedEffect(sessionID)
+            yield* Effect.promise(async () => {
+              try {
+                await runMemoryPostTurnHook({
+                  sessionID,
+                  messages: hookMsgs,
+                  llmStream: LLM.stream,
+                  agent: _lastAgent!,
+                  model: _lastModel!,
+                  user: _lastUser2!,
+                })
+              } catch (e) {
+                log.warn("memory post-turn hook failed", { error: e })
+              }
+            }).pipe(Effect.ignore, Effect.forkIn(scope))
           }
 
           yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
