@@ -139,14 +139,45 @@ function getState(): CockpitState {
 }
 
 export function hasCockpitPool(provider: string): boolean {
-  if (!_initialized) {
-    // Trigger background init — will be ready by next call
-    ensureInit().catch(() => {})
-    return false
+  // Fast path: already initialized
+  if (_initialized && _state) {
+    const pool = _state.pools[provider]
+    return pool !== undefined && pool.keys.length > 0
   }
-  if (!_state) return false
-  const pool = _state.pools[provider]
-  return pool !== undefined && pool.keys.length > 0
+
+  // First-time synchronous check: does the config file even exist?
+  // This avoids the async race where first request bypasses cockpit
+  if (!_initialized) {
+    try {
+      const fs = require("fs")
+      const configPath = require("path").join(require("os").homedir(), ".xethryon", "cockpit.json")
+      if (!fs.existsSync(configPath)) {
+        _initialized = true // No config = no cockpit, skip future checks
+        _state = { pools: {} }
+        return false
+      }
+      // Config exists — do synchronous init
+      const raw = fs.readFileSync(configPath, "utf-8")
+      const config = JSON.parse(raw)
+      if (!config.pools || Object.keys(config.pools).length === 0) {
+        _initialized = true
+        _state = { pools: {} }
+        return false
+      }
+      // We have pools — trigger full async init for state loading
+      ensureInit().catch(() => {})
+
+      // Meanwhile, check if this provider has keys in the raw config
+      const pool = config.pools[provider]
+      return pool !== undefined && Array.isArray(pool.keys) && pool.keys.length > 0
+    } catch {
+      _initialized = true
+      _state = { pools: {} }
+      return false
+    }
+  }
+
+  return false
 }
 
 export function getActiveKey(provider: string): (PoolKeyConfig & { _stateIndex: number }) | undefined {

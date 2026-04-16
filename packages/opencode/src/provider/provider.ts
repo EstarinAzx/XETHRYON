@@ -13,7 +13,7 @@ import { type LanguageModelV3 } from "@ai-sdk/provider"
 import { ModelsDev } from "./models"
 import { Auth } from "../auth"
 import { Env } from "../env"
-import { hasCockpitPool, getActiveKey, cockpitFetch } from "../xethryon/cockpit/index.js"
+import { cockpitFetch } from "../xethryon/cockpit/index.js"
 import { Instance } from "../project/instance"
 import { Flag } from "../flag/flag"
 import { iife } from "@/util/iife"
@@ -1331,13 +1331,8 @@ export namespace Provider {
           })
 
           if (baseURL !== undefined) options["baseURL"] = baseURL
-          // Cockpit: if a key pool exists, use the active pool key
-          if (hasCockpitPool(model.providerID)) {
-            const poolKey = getActiveKey(model.providerID)
-            if (poolKey) options["apiKey"] = poolKey.apiKey
-          } else if (options["apiKey"] === undefined && provider.key) {
-            options["apiKey"] = provider.key
-          }
+          // Always set the static provider key — cockpit overrides per-request via fetch interceptor
+          if (options["apiKey"] === undefined && provider.key) options["apiKey"] = provider.key
           if (model.headers)
             options["headers"] = {
               ...options["headers"],
@@ -1360,9 +1355,8 @@ export namespace Provider {
 
           options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
             const baseFetchFn = customFetch ?? fetch
-            const fetchFn = hasCockpitPool(model.providerID)
-              ? cockpitFetch(model.providerID, baseFetchFn)
-              : baseFetchFn
+            // Cockpit always wraps — it's a no-op when no pool exists
+            const fetchFn = cockpitFetch(model.providerID, baseFetchFn)
             const opts = init ?? {}
             const chunkAbortCtl =
               typeof chunkTimeout === "number" && chunkTimeout > 0 ? new AbortController() : undefined
