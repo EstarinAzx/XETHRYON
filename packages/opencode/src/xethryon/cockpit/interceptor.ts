@@ -2,9 +2,13 @@
  * Cockpit — Fetch Interceptor.
  *
  * Wraps the provider's fetch function to:
- * 1. Inject the active pool key's Authorization header
+ * 1. Override the Authorization header the SDK already set with the active pool key
  * 2. Catch 429 responses → mark key exhausted → retry with next key
- * 3. Track token usage from response headers (if available)
+ * 3. Track requests per key
+ *
+ * Key insight: the AI SDK sets Authorization internally from `apiKey` in the
+ * constructor. Our fetch wrapper runs AFTER the SDK has built the request,
+ * so we can safely override the Authorization header the SDK already set.
  */
 
 import { Log } from "@/util/log"
@@ -21,9 +25,30 @@ import {
 const log = Log.create({ service: "xethryon.cockpit.interceptor" })
 
 /**
+ * Replace the Authorization header in a fetch init object.
+ * Handles both Headers objects and plain objects.
+ */
+function overrideAuth(init: any, apiKey: string): any {
+  const newInit = { ...init }
+  // The SDK may pass headers as a plain object or Headers instance
+  if (newInit.headers instanceof Headers) {
+    newInit.headers = new Headers(newInit.headers)
+    newInit.headers.set("Authorization", `Bearer ${apiKey}`)
+  } else if (newInit.headers && typeof newInit.headers === "object") {
+    newInit.headers = {
+      ...newInit.headers,
+      Authorization: `Bearer ${apiKey}`,
+    }
+  } else {
+    newInit.headers = { Authorization: `Bearer ${apiKey}` }
+  }
+  return newInit
+}
+
+/**
  * Create a cockpit-aware fetch function that wraps the original.
  * When a pool is active for this provider, the interceptor:
- *   - Overrides the Authorization / Bearer header with the pool's active key
+ *   - Overrides the Authorization header the SDK already set
  *   - On 429, marks the key exhausted, rotates, and retries once
  */
 export function cockpitFetch(
@@ -50,16 +75,17 @@ export function cockpitFetch(
       return originalFetch(input, init)
     }
 
-    // Inject the active key
-    const headers = new Headers(init?.headers)
-    headers.set("Authorization", `Bearer ${activeKey.apiKey}`)
-    const modifiedInit = { ...init, headers }
+    // Override the Authorization header the SDK already set
+    const modifiedInit = overrideAuth(init ?? {}, activeKey.apiKey)
 
     log.info("cockpit request", {
       providerID,
       keyId: activeKey.id,
       keyIndex: activeKey._stateIndex,
     })
+
+    // Track that we made a request with this key
+    recordUsage(providerID, activeKey.id, 0)
 
     const response = await originalFetch(input, modifiedInit)
 
@@ -72,12 +98,10 @@ export function cockpitFetch(
       const nextKey = rotateToNext(providerID)
       if (nextKey) {
         log.info("retrying with rotated key", { providerID, keyId: nextKey.id })
-        const retryHeaders = new Headers(init?.headers)
-        retryHeaders.set("Authorization", `Bearer ${nextKey.apiKey}`)
-        const retryResponse = await originalFetch(input, { ...init, headers: retryHeaders })
+        const retryInit = overrideAuth(init ?? {}, nextKey.apiKey)
+        const retryResponse = await originalFetch(input, retryInit)
 
         if (retryResponse.status === 429) {
-          // Next key also 429'd — could be a different limit
           log.warn("retry key also hit 429", { providerID, keyId: nextKey.id })
           markExhausted(providerID, nextKey.id, "session_exhausted")
         }
