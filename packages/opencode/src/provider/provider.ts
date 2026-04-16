@@ -13,7 +13,7 @@ import { type LanguageModelV3 } from "@ai-sdk/provider"
 import { ModelsDev } from "./models"
 import { Auth } from "../auth"
 import { Env } from "../env"
-import { cockpitFetch } from "../xethryon/cockpit/index.js"
+import { cockpitFetch, getPoolStatus } from "../xethryon/cockpit/index.js"
 import { Instance } from "../project/instance"
 import { Flag } from "../flag/flag"
 import { iife } from "@/util/iife"
@@ -1331,19 +1331,28 @@ export namespace Provider {
           })
 
           if (baseURL !== undefined) options["baseURL"] = baseURL
-          // Always set the static provider key — cockpit overrides per-request via fetch interceptor
-          if (options["apiKey"] === undefined && provider.key) options["apiKey"] = provider.key
+          // Cockpit: inject the active pool key at SDK creation time
+          // This ensures the SDK's internal auth uses the correct key
+          const cockpitStatus = getPoolStatus(model.providerID)
+          if (cockpitStatus && cockpitStatus.activeKey?.apiKey) {
+            options["apiKey"] = cockpitStatus.activeKey.apiKey
+          } else if (options["apiKey"] === undefined && provider.key) {
+            options["apiKey"] = provider.key
+          }
           if (model.headers)
             options["headers"] = {
               ...options["headers"],
               ...model.headers,
             }
 
+          // Include cockpit activeIndex in cache key so rotation busts the cache
+          const cockpitIndex = cockpitStatus?.activeIndex ?? -1
           const key = Hash.fast(
             JSON.stringify({
               providerID: model.providerID,
               npm: model.api.npm,
               options,
+              cockpitIndex,
             }),
           )
           const existing = s.sdk.get(key)

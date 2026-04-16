@@ -2,12 +2,13 @@
  * Cockpit — Fetch Interceptor.
  *
  * Wraps the provider's fetch function to:
- * 1. Track requests per key (no auth modification for normal requests)
- * 2. On 429 → mark key exhausted → rebuild request with next key → retry
+ * 1. Track requests per key
+ * 2. On 429 → mark key exhausted → rotate (SDK cache will bust on next request)
  *
- * Design: The SDK manages auth internally via its constructor apiKey.
- * We DON'T touch auth headers for normal requests — just track them.
- * Only on 429 failover do we override the Authorization header to swap keys.
+ * Design: The SDK is created with the cockpit's active key via resolveSDK.
+ * The cockpit activeIndex is part of the SDK cache key, so when we rotate,
+ * the next request will create a fresh SDK with the new key automatically.
+ * We DON'T retry in the interceptor — the SDK's built-in retry handles it.
  */
 
 import { Log } from "@/util/log"
@@ -17,37 +18,17 @@ import {
   markExhausted,
   rotateToNext,
   recordUsage,
-  shouldPreemptiveSwitch,
   ensureInit,
 } from "./pool.js"
 
 const log = Log.create({ service: "xethryon.cockpit.interceptor" })
 
 /**
- * Replace the Authorization header in a fetch init object.
- * Only used for 429 retry with a different key.
- */
-function overrideAuth(init: any, apiKey: string): any {
-  const newInit = { ...init }
-  if (newInit.headers instanceof Headers) {
-    newInit.headers = new Headers(newInit.headers)
-    newInit.headers.set("Authorization", `Bearer ${apiKey}`)
-  } else if (newInit.headers && typeof newInit.headers === "object") {
-    newInit.headers = {
-      ...newInit.headers,
-      Authorization: `Bearer ${apiKey}`,
-    }
-  } else {
-    newInit.headers = { Authorization: `Bearer ${apiKey}` }
-  }
-  return newInit
-}
-
-/**
  * Create a cockpit-aware fetch function that wraps the original.
  *
  * Normal flow: just pass through and track the request.
- * On 429: mark key exhausted, rotate to next, retry with overridden auth.
+ * On 429: mark key exhausted, rotate to next. The SDK's retry mechanism
+ * will create a new SDK (cache busted by activeIndex change) with the new key.
  */
 export function cockpitFetch(
   providerID: string,
@@ -63,11 +44,10 @@ export function cockpitFetch(
 
     const activeKey = getActiveKey(providerID)
     if (!activeKey) {
-      // No active keys — just pass through
       return originalFetch(input, init)
     }
 
-    // Track the request (don't modify auth — let SDK handle it)
+    // Track the request
     recordUsage(providerID, activeKey.id, 0)
 
     log.info("cockpit tracking request", {
@@ -78,28 +58,23 @@ export function cockpitFetch(
 
     const response = await originalFetch(input, init)
 
-    // Handle 429 — rate limit hit → rotate and retry
+    // Handle 429 — rate limit hit → rotate for next request
     if (response.status === 429) {
-      log.warn("429 rate limit hit", { providerID, keyId: activeKey.id })
-      markExhausted(providerID, activeKey.id, "session_exhausted")
+      log.warn("429 rate limit hit — rotating cockpit key", { providerID, keyId: activeKey.id })
 
-      // Try next key — this time we DO override auth since we're switching keys
+      // Determine exhaustion type from response body
+      const bodyText = await response.clone().text().catch(() => "")
+      const isWeekly = bodyText.includes("weekly")
+      markExhausted(providerID, activeKey.id, isWeekly ? "weekly_exhausted" : "session_exhausted")
+
+      // Rotate to next key — the SDK cache will bust on the next request
+      // because cockpitIndex is part of the cache key
       const nextKey = rotateToNext(providerID)
       if (nextKey) {
-        log.info("retrying with rotated key", { providerID, keyId: nextKey.id })
-        const retryInit = overrideAuth(init ?? {}, nextKey.apiKey)
-        const retryResponse = await originalFetch(input, retryInit)
-
-        if (retryResponse.status === 429) {
-          log.warn("retry key also hit 429", { providerID, keyId: nextKey.id })
-          markExhausted(providerID, nextKey.id, "session_exhausted")
-        }
-
-        return retryResponse
+        log.info("rotated to next key for retry", { providerID, keyId: nextKey.id })
+      } else {
+        log.error("all cockpit keys exhausted", { providerID })
       }
-
-      // All keys exhausted — return the 429 as-is
-      log.error("all cockpit keys exhausted, returning 429", { providerID })
     }
 
     return response
