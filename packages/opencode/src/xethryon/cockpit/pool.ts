@@ -335,8 +335,20 @@ export function shouldPreemptiveSwitch(provider: string): boolean {
 // ─── Status ────────────────────────────────────────────────
 
 export function getPoolStatus(provider: string): PoolStatus | undefined {
-  if (!_state) return undefined
-  const pool = _state.pools[provider]
+  // Try in-memory state first, then fall back to reading from disk
+  let pool = _state?.pools[provider]
+
+  if (!pool) {
+    // Read state file directly (TUI may call before interceptor fires)
+    try {
+      const raw = require("fs").readFileSync(STATE_PATH, "utf-8")
+      const fileState = JSON.parse(raw) as CockpitState
+      pool = fileState.pools[provider]
+    } catch {
+      return undefined
+    }
+  }
+
   if (!pool || pool.keys.length === 0) return undefined
 
   const configKeys = (() => {
@@ -365,7 +377,7 @@ export function getPoolStatus(provider: string): PoolStatus | undefined {
     activeKey,
     activeIndex: pool.activeIndex,
     keys: combined,
-    strategy: "failover", // from config, simplified for now
+    strategy: "failover",
     allExhausted,
   }
 }
