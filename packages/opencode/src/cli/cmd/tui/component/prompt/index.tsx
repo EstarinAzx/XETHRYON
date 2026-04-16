@@ -29,6 +29,7 @@ import { Locale } from "@/util/locale"
 import { formatDuration } from "@/util/format"
 import { createColors, createFrames } from "../../ui/spinner.ts"
 import { setAutonomy, isAutonomyEnabled } from "@/xethryon/autonomy"
+import { getPoolStatus } from "@/xethryon/cockpit"
 import { useDialog } from "@tui/ui/dialog"
 import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
 import { DialogAlert } from "../../ui/dialog-alert"
@@ -1106,6 +1107,26 @@ export function Prompt(props: PromptProps) {
                     <span style={{ fg: theme.textMuted }}>{local.model.parsed().model}</span>
                     {"  AUTONOMY: "}
                     <span style={{ fg: store.autonomy ? theme.success : theme.textMuted }}><b>{store.autonomy ? "ON" : "OFF"}</b></span>
+                    {(() => {
+                      const [cockpit, setCockpit] = createSignal(getPoolStatus(local.model.parsed().provider))
+                      const timer = setInterval(() => setCockpit(getPoolStatus(local.model.parsed().provider)), 5000)
+                      onCleanup(() => clearInterval(timer))
+                      return (
+                        <Show when={cockpit()}>
+                          {(cp) => (
+                            <>
+                              {"  COCKPIT: "}
+                              <span style={{ fg: cp().allExhausted ? theme.error : theme.success }}>
+                                <b>{`Key ${cp().activeIndex + 1}/${cp().totalKeys}`}</b>
+                              </span>
+                              <span style={{ fg: theme.textMuted }}>
+                                {` [${cp().activeKey.totalRequests}req]`}
+                              </span>
+                            </>
+                          )}
+                        </Show>
+                      )
+                    })()}
                   </Show>
                 </text>
               </box>
