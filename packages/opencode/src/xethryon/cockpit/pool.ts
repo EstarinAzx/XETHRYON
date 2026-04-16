@@ -134,7 +134,7 @@ export async function initPool(): Promise<void> {
 // ─── Pool Queries ──────────────────────────────────────────
 
 function getState(): CockpitState {
-  if (!_state) throw new Error("Cockpit not initialized — call initPool() first")
+  if (!_state) return { pools: {} }
   return _state
 }
 
