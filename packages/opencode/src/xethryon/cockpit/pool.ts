@@ -83,7 +83,7 @@ async function flushState(): Promise<void> {
 let _initialized = false
 let _initPromise: Promise<void> | undefined
 
-async function ensureInit(): Promise<void> {
+export async function ensureInit(): Promise<void> {
   if (_initialized) return
   if (_initPromise) return _initPromise
   _initPromise = initPool().then(() => {

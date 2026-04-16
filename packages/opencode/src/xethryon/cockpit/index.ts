@@ -32,6 +32,7 @@ export {
 // --- Pool Manager ---
 export {
   initPool,
+  ensureInit,
   hasCockpitPool,
   getActiveKey,
   rotateToNext,

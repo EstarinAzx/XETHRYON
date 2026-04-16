@@ -15,6 +15,7 @@ import {
   rotateToNext,
   recordUsage,
   shouldPreemptiveSwitch,
+  ensureInit,
 } from "./pool.js"
 
 const log = Log.create({ service: "xethryon.cockpit.interceptor" })
@@ -33,6 +34,9 @@ export function cockpitFetch(
     if (!hasCockpitPool(providerID)) {
       return originalFetch(input, init)
     }
+
+    // Ensure pool state is fully loaded before first use
+    await ensureInit()
 
     // Pre-emptive rotation check
     if (shouldPreemptiveSwitch(providerID)) {
