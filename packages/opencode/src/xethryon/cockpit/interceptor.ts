@@ -2,13 +2,12 @@
  * Cockpit — Fetch Interceptor.
  *
  * Wraps the provider's fetch function to:
- * 1. Override the Authorization header the SDK already set with the active pool key
- * 2. Catch 429 responses → mark key exhausted → retry with next key
- * 3. Track requests per key
+ * 1. Track requests per key (no auth modification for normal requests)
+ * 2. On 429 → mark key exhausted → rebuild request with next key → retry
  *
- * Key insight: the AI SDK sets Authorization internally from `apiKey` in the
- * constructor. Our fetch wrapper runs AFTER the SDK has built the request,
- * so we can safely override the Authorization header the SDK already set.
+ * Design: The SDK manages auth internally via its constructor apiKey.
+ * We DON'T touch auth headers for normal requests — just track them.
+ * Only on 429 failover do we override the Authorization header to swap keys.
  */
 
 import { Log } from "@/util/log"
@@ -26,11 +25,10 @@ const log = Log.create({ service: "xethryon.cockpit.interceptor" })
 
 /**
  * Replace the Authorization header in a fetch init object.
- * Handles both Headers objects and plain objects.
+ * Only used for 429 retry with a different key.
  */
 function overrideAuth(init: any, apiKey: string): any {
   const newInit = { ...init }
-  // The SDK may pass headers as a plain object or Headers instance
   if (newInit.headers instanceof Headers) {
     newInit.headers = new Headers(newInit.headers)
     newInit.headers.set("Authorization", `Bearer ${apiKey}`)
@@ -47,9 +45,9 @@ function overrideAuth(init: any, apiKey: string): any {
 
 /**
  * Create a cockpit-aware fetch function that wraps the original.
- * When a pool is active for this provider, the interceptor:
- *   - Overrides the Authorization header the SDK already set
- *   - On 429, marks the key exhausted, rotates, and retries once
+ *
+ * Normal flow: just pass through and track the request.
+ * On 429: mark key exhausted, rotate to next, retry with overridden auth.
  */
 export function cockpitFetch(
   providerID: string,
@@ -63,38 +61,29 @@ export function cockpitFetch(
     // Ensure pool state is fully loaded before first use
     await ensureInit()
 
-    // Pre-emptive rotation check
-    if (shouldPreemptiveSwitch(providerID)) {
-      log.info("pre-emptive key rotation triggered", { providerID })
-      rotateToNext(providerID)
-    }
-
     const activeKey = getActiveKey(providerID)
     if (!activeKey) {
-      log.warn("no active cockpit keys available, falling through", { providerID })
+      // No active keys — just pass through
       return originalFetch(input, init)
     }
 
-    // Override the Authorization header the SDK already set
-    const modifiedInit = overrideAuth(init ?? {}, activeKey.apiKey)
+    // Track the request (don't modify auth — let SDK handle it)
+    recordUsage(providerID, activeKey.id, 0)
 
-    log.info("cockpit request", {
+    log.info("cockpit tracking request", {
       providerID,
       keyId: activeKey.id,
       keyIndex: activeKey._stateIndex,
     })
 
-    // Track that we made a request with this key
-    recordUsage(providerID, activeKey.id, 0)
+    const response = await originalFetch(input, init)
 
-    const response = await originalFetch(input, modifiedInit)
-
-    // Handle 429 — rate limit hit
+    // Handle 429 — rate limit hit → rotate and retry
     if (response.status === 429) {
       log.warn("429 rate limit hit", { providerID, keyId: activeKey.id })
       markExhausted(providerID, activeKey.id, "session_exhausted")
 
-      // Try next key
+      // Try next key — this time we DO override auth since we're switching keys
       const nextKey = rotateToNext(providerID)
       if (nextKey) {
         log.info("retrying with rotated key", { providerID, keyId: nextKey.id })
@@ -119,7 +108,6 @@ export function cockpitFetch(
 
 /**
  * After an LLM response completes, record token usage for the active key.
- * Call this from the prompt loop after tokens are known.
  */
 export function recordCockpitUsage(providerID: string, tokens: number): void {
   if (!hasCockpitPool(providerID)) return
