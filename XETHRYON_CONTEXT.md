@@ -13,6 +13,7 @@ Xethryon is a **terminal-based AI coding agent** (TUI) that forks and extends [O
 - **Parallel sub-agent teams** (Swarm system)
 - **Bundled skills** (slash commands like `/verify`, `/batch`, `/debug`)
 - **Cyberpunk-themed UI** with a custom color palette
+- **Cockpit API key rotation** for unlimited LLM quota via key pooling
 
 **Repository:** `https://github.com/EstarinAzx/XETHRYON`
 **Branch:** `xethryon` (primary development branch)
@@ -62,6 +63,12 @@ opencode-dev/                          # Root monorepo
 │   │   │   │   └── ...                # grep, glob, webfetch, websearch, etc.
 │   │   │   ├── xethryon/              # ⭐ XETHRYON-SPECIFIC CODE
 │   │   │   │   ├── autonomy.ts        # Autonomy toggle (process.env based)
+│   │   │   │   ├── cockpit/           # ⭐ API key rotation system
+│   │   │   │   │   ├── index.ts       # Public API barrel
+│   │   │   │   │   ├── interceptor.ts # Fetch interceptor (tracks, patches stale auth, handles 429)
+│   │   │   │   │   ├── pool.ts        # Key pool state machine (rotation, exhaustion, recovery)
+│   │   │   │   │   ├── config.ts      # Loads cockpit.json
+│   │   │   │   │   └── types.ts       # TypeScript types (PoolKeyState, CockpitState, etc.)
 │   │   │   │   ├── memory/            # Persistent memory system (17 files)
 │   │   │   │   │   ├── index.ts       # Public API barrel
 │   │   │   │   │   ├── memoryHook.ts  # Post-turn memory extraction hook
@@ -263,7 +270,86 @@ permission: [
 
 **Status:** The memory module is fully coded and ported from Claude Code's architecture. The `memoryHook.ts` integrates with the session prompt loop. However, the wiring to the main prompt pipeline may need verification to ensure it's actually being invoked on every turn.
 
-### 3.6 Skills System
+### 3.6 Cockpit — API Key Rotation System
+
+**Directory:** `xethryon/cockpit/`
+**Config:** `~/.xethryon/cockpit.json`
+**State:** `~/.xethryon/cockpit-state.json`
+
+**What it does:** Manages a pool of API keys per provider, tracks usage, and automatically rotates to the next key when a 429 (rate limit) is received. This enables "infinite" LLM quota by stacking multiple accounts.
+
+**Architecture:**
+
+```
+┌─────────────────┐     ┌──────────────────────┐     ┌─────────────────┐
+│  SDK (ai-sdk)   │──►  │  cockpit interceptor  │──►  │  Ollama Cloud   │
+│                 │     │  (wraps fetch)         │     │  / any provider │
+│  apiKey from    │     │                        │     │                 │
+│  cockpit pool   │     │  1. Patch stale auth   │     │  429? ──────────┤
+│                 │     │  2. Track requests      │     │                 │
+│  cache key has  │     │  3. Catch 429 → rotate  │     └─────────────────┘
+│  cockpitIndex   │     └──────────────────────┘
+└─────────────────┘
+```
+
+**How it works:**
+1. **SDK creation** (`provider.ts`): `getPoolStatus()` injects the active pool key as `apiKey`. The SDK cache includes `cockpitIndex` — so rotating keys forces a new SDK to be created.
+2. **Fetch interceptor** (`interceptor.ts`): Wraps every provider fetch call.
+   - **Normal requests**: Passes through, tracks the request count.
+   - **Stale key detection**: If the SDK was built with Key 1 but cockpit rotated to Key 2 (e.g., during SDK retry), the interceptor detects the mismatch and patches the Authorization header.
+   - **On 429**: Reads the response body; marks key as `session_exhausted` (if temporary) or `weekly_exhausted` (if "weekly" appears in the error). Calls `rotateToNext()` to advance `activeIndex`.
+3. **Pool state machine** (`pool.ts`): Manages key lifecycle.
+   - **Key statuses**: `active` → `session_exhausted` / `weekly_exhausted`
+   - **Auto-recovery**: `session_exhausted` keys reactivate after **5 hours**. `weekly_exhausted` keys are **probed after 24 hours** (not locked for 7 days — it retries and re-marks if still exhausted).
+   - **Escalation**: If a key gets 429 twice within 30 seconds while already `session_exhausted`, it escalates to `weekly_exhausted`.
+4. **State persistence**: Flushed to `cockpit-state.json` every 30 seconds and on rotation.
+5. **TUI display** (`prompt/index.tsx`): Shows `COCKPIT: Key 1/2 [136req]` in the footer bar. Green = active, red = all exhausted. Polls every 5 seconds, reads from disk if in-memory state isn't available.
+
+**Config format (`~/.xethryon/cockpit.json`):**
+```json
+{
+  "pools": {
+    "ollama-cloud": {
+      "strategy": "failover",
+      "switchAtPercent": 85,
+      "weeklyLimit": 1000000,
+      "keys": [
+        { "id": "main", "apiKey": "<key-from-account-1>" },
+        { "id": "alt-1", "apiKey": "<key-from-account-2>" },
+        { "id": "alt-2", "apiKey": "<key-from-account-3>" }
+      ]
+    }
+  }
+}
+```
+
+**⚠ Critical:** Each key MUST be from a **different Ollama Cloud account**. Keys from the same account share the same weekly quota — rotation won't help.
+
+**State file format (`~/.xethryon/cockpit-state.json`):**
+```json
+{
+  "pools": {
+    "ollama-cloud": {
+      "provider": "ollama-cloud",
+      "activeIndex": 1,
+      "keys": [
+        { "id": "main", "status": "weekly_exhausted", "totalRequests": 138, "totalFailures": 3, "exhaustedAt": 1776388463625 },
+        { "id": "alt-1", "status": "active", "totalRequests": 7, "totalFailures": 0 }
+      ],
+      "lastFlushed": 1776391115705
+    }
+  }
+}
+```
+
+**Key design decisions:**
+- API keys are NEVER stored in the state file — only in `cockpit.json`. State only tracks usage metrics.
+- `getPoolStatus()` reads from disk as fallback when in-memory state hasn't been initialized (handles TUI rendering before first request).
+- `cockpitIndex` is part of the SDK cache key — rotating forces a fresh SDK with the new key's apiKey.
+- The interceptor detects stale keys by comparing the request's Bearer token against the cockpit's active key, then patches only when they differ.
+- Cockpit is provider-agnostic. Add pools for any provider ID (e.g., `"openai"`, `"anthropic"`) to rotate keys across any backend.
+
+### 3.7 Skills System
 
 **Directory:** `xethryon/skills/`
 
@@ -335,6 +421,13 @@ The pre-push hook runs `bun turbo typecheck` across ALL packages. Some upstream 
 ## 5. Commit History (Recent)
 
 ```
+27d7cd963 fix(cockpit): detect stale SDK key on retry and patch auth header for rotated key
+fb71b13fd fix(cockpit): SDK-level key rotation - inject key at SDK creation, bust cache on rotate
+8e67493e1 fix(cockpit): TUI reads state from disk when in-memory state unavailable
+d397d1d06 fix(cockpit): use providerID not display name for TUI status lookup
+91090c1df feat(cockpit): add TUI status display - shows active key and request count in footer
+dcfbd3e56 fix(cockpit): don't override auth on normal requests, only on 429 retry
+... (cockpit implementation commits)
 12a480581 chore: remove debug log that flashed in TUI during swarm inject
 a1ea4f09c fix(autonomy): bypass external_directory permission when autonomy is ON
 997e85d5b fix(swarm): use direct SessionPrompt.prompt() for auto-inject
@@ -374,6 +467,11 @@ dedccb9b6 ui: rename STRATAGEM to ARCHITECT
 - ✅ TUI-side swarm auto-inject was fragile and tab-dependent (fixed: server-side SessionPrompt.prompt() injection)
 - ✅ HTTP prompt_async approach failed due to Hono routing issues (fixed: switched to direct SessionPrompt.prompt() call)
 - ✅ Debug log `[swarm:inject]` flashing in TUI (fixed: removed console.error)
+- ✅ Cockpit header override causing "Unauthorized" on every request (fixed: only patch when stale key detected)
+- ✅ Cockpit lazy init race condition (fixed: synchronous config check + ensureInit await)
+- ✅ SDK retry using stale key after cockpit rotation (fixed: interceptor detects token mismatch and patches Authorization)
+- ✅ Cockpit TUI not showing (fixed: read state from disk when in-memory unavailable, use providerID not display name)
+- ✅ False key exhaustion (SDK retry with old key caused cockpit to blame the new key) (fixed: stale key detection)
 
 ### 6.2 Known / Open
 - ⚠ **`thought_signature` Gemini error:** Gemini Flash with thinking mode requires `thought_signature` in function call parts. This is a provider-level issue in the AI SDK adapter, not in Xethryon code. Swarm may fail when using Gemini models with thinking enabled.
@@ -398,17 +496,20 @@ dedccb9b6 ui: rename STRATAGEM to ARCHITECT
 These are potential features discussed but NOT yet implemented:
 
 1. **Persistent Project Memory (wire it up)** — Verify and complete the integration of `memoryHook.ts` into the prompt pipeline so memories persist across sessions.
-2. **Agent Self-Reflection Loop** — Before submitting a response, the agent reviews its own work automatically.
-3. **Git-Aware Workflows** — Smart auto-branching, stash management, conflict resolution, one-command PR creation.
-4. **Live Agent Dashboard** — Real-time TUI view of all swarm teammates' status, progress, files touched.
-5. **Skill Marketplace** — Shareable skill packs that users can install/publish.
-6. **Computer Use** — Vision-based GUI interaction using screenshots + pyautogui (high effort, long-term).
-7. **Ensemble-style patterns** — The `opencode-ensemble` plugin (at `D:\eweew\AG\ccleak\opencode-ensemble-main`) has additional ideas worth exploring:
-   - SQLite-backed task boards (vs our filesystem JSON) for better concurrency
-   - Dynamic system prompt transforms (inject team context into system prompt per-session)
-   - Session status tracking via event subscriptions (idle → busy → done state machine)
-8. **Dependency chain auto-spawn** — `blockedBy` dependencies exist in the type system but auto-spawning when prerequisites complete could be more robust.
-9. **Error recovery for auto-inject** — If `SessionPrompt.prompt()` fails during injection, currently catches and logs but doesn't retry. Could add exponential backoff.
+2. **Cockpit — Pre-emptive Rotation** — Switch keys BEFORE hitting 429 based on estimated token usage (the `shouldPreemptiveSwitch()` function exists but isn't wired into the prompt loop yet).
+3. **Cockpit — Token Tracking** — Implement `recordCockpitUsage()` in the prompt loop to accurately track token usage per key.
+4. **Cockpit — `/cockpit` Dashboard Command** — A TUI slash command to view all keys, usage stats, and status in-session.
+5. **Agent Self-Reflection Loop** — Before submitting a response, the agent reviews its own work automatically.
+6. **Git-Aware Workflows** — Smart auto-branching, stash management, conflict resolution, one-command PR creation.
+7. **Live Agent Dashboard** — Real-time TUI view of all swarm teammates' status, progress, files touched.
+8. **Skill Marketplace** — Shareable skill packs that users can install/publish.
+9. **Computer Use** — Vision-based GUI interaction using screenshots + pyautogui (high effort, long-term).
+10. **Ensemble-style patterns** — The `opencode-ensemble` plugin (at `D:\eweew\AG\ccleak\opencode-ensemble-main`) has additional ideas worth exploring:
+    - SQLite-backed task boards (vs our filesystem JSON) for better concurrency
+    - Dynamic system prompt transforms (inject team context into system prompt per-session)
+    - Session status tracking via event subscriptions (idle → busy → done state machine)
+11. **Dependency chain auto-spawn** — `blockedBy` dependencies exist in the type system but auto-spawning when prerequisites complete could be more robust.
+12. **Error recovery for auto-inject** — If `SessionPrompt.prompt()` fails during injection, currently catches and logs but doesn't retry. Could add exponential backoff.
 
 ---
 
@@ -428,6 +529,13 @@ These are potential features discussed but NOT yet implemented:
 | Task board | `packages/opencode/src/xethryon/swarm/tasks-board.ts` |
 | Mailbox IPC | `packages/opencode/src/xethryon/swarm/mailbox.ts` |
 | Team file CRUD | `packages/opencode/src/xethryon/swarm/team.ts` |
+| ⭐ Cockpit interceptor | `packages/opencode/src/xethryon/cockpit/interceptor.ts` |
+| Cockpit pool state machine | `packages/opencode/src/xethryon/cockpit/pool.ts` |
+| Cockpit config loader | `packages/opencode/src/xethryon/cockpit/config.ts` |
+| Cockpit types | `packages/opencode/src/xethryon/cockpit/types.ts` |
+| Cockpit barrel exports | `packages/opencode/src/xethryon/cockpit/index.ts` |
+| Cockpit user config | `~/.xethryon/cockpit.json` |
+| Cockpit persisted state | `~/.xethryon/cockpit-state.json` |
 | Memory hook | `packages/opencode/src/xethryon/memory/memoryHook.ts` |
 | Memory public API | `packages/opencode/src/xethryon/memory/index.ts` |
 | Skills registry | `packages/opencode/src/xethryon/skills/registry.ts` |
@@ -438,6 +546,7 @@ These are potential features discussed but NOT yet implemented:
 | TUI thread | `packages/opencode/src/cli/cmd/tui/thread.ts` |
 | SDK context | `packages/opencode/src/cli/cmd/tui/context/sdk.tsx` |
 | Theme file | `packages/opencode/src/cli/cmd/tui/context/theme/xethryon.json` |
+| ⭐ Provider + cockpit wiring | `packages/opencode/src/provider/provider.ts` |
 | Session prompt loop | `packages/opencode/src/session/prompt.ts` |
 | Session schema (MessageID, etc.) | `packages/opencode/src/session/schema.ts` |
 | Server (Hono app) | `packages/opencode/src/server/server.ts` |
@@ -521,4 +630,4 @@ git push origin xethryon --no-verify
 
 ---
 
-*Last updated: 2026-04-07 by Claude (Antigravity)*
+*Last updated: 2026-04-17 by Claude (Antigravity) — added Cockpit API rotation system*
